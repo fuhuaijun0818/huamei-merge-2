@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
@@ -16,7 +16,7 @@ const nowIso = () => new Date().toISOString();
 const uid = (prefix) => `${prefix}_${randomUUID()}`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const fail = (code, message, status = 400, details = []) => Object.assign(new Error(message), { code, status, details });
-const emptyTenant = () => ({ materials:[], inventoryBatches:[], procedureBoms:[], surgeries:[], consumptions:[], inTransit:[], imports:[], events:[], revision:0 });
+const emptyTenant = () => ({ materials:[], inventoryBatches:[], procedureBoms:[], surgeries:[], consumptions:[], inTransit:[], anomalyReviews:[], imports:[], events:[], revision:0 });
 const emptyState = () => ({ schemaVersion:1, tenants:{} });
 
 const readState = async () => {
@@ -55,7 +55,7 @@ const tenantState = (state, tenantId) => {
   const key = text(tenantId, 120) || "default";
   state.tenants[key] ||= emptyTenant();
   const tenant = state.tenants[key];
-  for (const field of ["materials", "inventoryBatches", "procedureBoms", "surgeries", "consumptions", "inTransit", "imports", "events"]) if (!Array.isArray(tenant[field])) tenant[field] = [];
+  for (const field of ["materials", "inventoryBatches", "procedureBoms", "surgeries", "consumptions", "inTransit", "anomalyReviews", "imports", "events"]) if (!Array.isArray(tenant[field])) tenant[field] = [];
   return tenant;
 };
 const appendEvent = (tenant, type, actor, detail) => {
@@ -172,6 +172,71 @@ const addDays = (dateString, days) => {
   return date.toISOString().slice(0, 10);
 };
 const today = () => new Date().toISOString().slice(0, 10);
+const buildAnomalyCandidates = ({ tenant, latestBoms, materialBySku }) => {
+  const surgeryById = new Map(tenant.surgeries.map((item) => [item.surgery_id, item]));
+  const anomalyGroups = new Map();
+  for (const consumption of tenant.consumptions) {
+    const surgery = surgeryById.get(consumption.surgery_id);
+    if (!surgery || surgery.status !== "completed") continue;
+    const bom = latestBoms.get(`${surgery.procedure_code}|${consumption.sku}`);
+    const expected = Number(bom?.standard_quantity);
+    if (!Number.isFinite(expected) || expected <= 0) continue;
+    const key = [surgery.doctor, surgery.department, surgery.procedure_code, consumption.sku].join("|");
+    const group = anomalyGroups.get(key) || {
+      doctor:surgery.doctor,
+      department:surgery.department,
+      procedure_code:surgery.procedure_code,
+      procedure_name:surgery.procedure_name,
+      sku:consumption.sku,
+      material_name:materialBySku.get(consumption.sku)?.name || consumption.sku,
+      surgeries:new Set(),
+      bom_versions:new Set(),
+      expected_quantity:0,
+      actual_quantity:0,
+      wasted_quantity:0
+    };
+    group.surgeries.add(surgery.surgery_id);
+    group.bom_versions.add(Number(bom.version) || 1);
+    group.expected_quantity += expected;
+    group.actual_quantity += Number(consumption.actual_consumed_quantity || 0);
+    group.wasted_quantity += Number(consumption.wasted_quantity || 0);
+    anomalyGroups.set(key, group);
+  }
+  return [...anomalyGroups.values()].map((group) => {
+    const { surgeries, bom_versions, ...summary } = group;
+    const surgeryIds = [...surgeries].sort();
+    const bomVersions = [...bom_versions].sort((a, b) => a - b);
+    const caseCount = surgeryIds.length;
+    const ratio = group.expected_quantity > 0 ? group.actual_quantity / group.expected_quantity : 0;
+    const expectedQuantity = Math.round(group.expected_quantity * 1000) / 1000;
+    const actualQuantity = Math.round(group.actual_quantity * 1000) / 1000;
+    const wastedQuantity = Math.round(group.wasted_quantity * 1000) / 1000;
+    const anomalyId = createHash("sha256").update(JSON.stringify({
+      doctor:group.doctor,
+      department:group.department,
+      procedure_code:group.procedure_code,
+      sku:group.sku,
+      surgery_ids:surgeryIds,
+      bom_versions:bomVersions,
+      expected_quantity:expectedQuantity,
+      actual_quantity:actualQuantity,
+      wasted_quantity:wastedQuantity
+    })).digest("hex").slice(0, 24);
+    return {
+      ...summary,
+      anomaly_id:anomalyId,
+      surgery_ids:surgeryIds,
+      bom_versions:bomVersions,
+      case_count:caseCount,
+      expected_quantity:expectedQuantity,
+      actual_quantity:actualQuantity,
+      wasted_quantity:wastedQuantity,
+      ratio:Math.round(ratio * 100) / 100,
+      status:caseCount >= 2 && ratio >= 1.5 ? "review_required" : "normal",
+      note:caseCount >= 2 && ratio >= 1.5 ? "实际消耗达到BOM标准1.5倍，请核查术式复杂度、套包、退库或记录差异" : ""
+    };
+  }).sort((a, b) => b.ratio - a.ratio);
+};
 
 export async function getSupplyChainOverview({ tenantId } = {}) {
   return withState(async (state) => {
@@ -241,47 +306,13 @@ export async function getSupplyChainOverview({ tenantId } = {}) {
         lead_time_days:Number(material?.lead_time_days) || 0
       };
     }).filter((item) => item.demand_quantity > 0 || item.recommended_quantity > 0);
-    const surgeryById = new Map(tenant.surgeries.map((item) => [item.surgery_id, item]));
-    const anomalyGroups = new Map();
-    for (const consumption of tenant.consumptions) {
-      const surgery = surgeryById.get(consumption.surgery_id);
-      if (!surgery || surgery.status !== "completed") continue;
-      const expected = Number(latestBoms.get(`${surgery.procedure_code}|${consumption.sku}`)?.standard_quantity);
-      if (!Number.isFinite(expected) || expected <= 0) continue;
-      const key = [surgery.doctor, surgery.department, surgery.procedure_code, consumption.sku].join("|");
-      const group = anomalyGroups.get(key) || {
-        doctor:surgery.doctor,
-        department:surgery.department,
-        procedure_code:surgery.procedure_code,
-        procedure_name:surgery.procedure_name,
-        sku:consumption.sku,
-        material_name:materialBySku.get(consumption.sku)?.name || consumption.sku,
-        surgeries:new Set(),
-        expected_quantity:0,
-        actual_quantity:0,
-        wasted_quantity:0
-      };
-      group.surgeries.add(surgery.surgery_id);
-      group.expected_quantity += expected;
-      group.actual_quantity += Number(consumption.actual_consumed_quantity || 0);
-      group.wasted_quantity += Number(consumption.wasted_quantity || 0);
-      anomalyGroups.set(key, group);
-    }
-    const anomalies = [...anomalyGroups.values()].map((group) => {
-      const { surgeries, ...summary } = group;
-      const caseCount = group.surgeries.size;
-      const ratio = group.expected_quantity > 0 ? group.actual_quantity / group.expected_quantity : 0;
-      return {
-        ...summary,
-        case_count:caseCount,
-        expected_quantity:Math.round(group.expected_quantity * 1000) / 1000,
-        actual_quantity:Math.round(group.actual_quantity * 1000) / 1000,
-        wasted_quantity:Math.round(group.wasted_quantity * 1000) / 1000,
-        ratio:Math.round(ratio * 100) / 100,
-        status:caseCount >= 2 && ratio >= 1.5 ? "review_required" : "normal",
-        note:caseCount >= 2 && ratio >= 1.5 ? "实际消耗达到BOM标准1.5倍，请核查术式复杂度、套包、退库或记录差异" : ""
-      };
-    }).filter((item) => item.status === "review_required").sort((a, b) => b.ratio - a.ratio);
+    const reviewByAnomaly = new Map((tenant.anomalyReviews || []).map((item) => [item.anomaly_id, item]));
+    const anomalies = buildAnomalyCandidates({ tenant, latestBoms, materialBySku })
+      .filter((item) => item.status === "review_required")
+      .map((item) => ({ ...item, review:reviewByAnomaly.has(item.anomaly_id) ? clone(reviewByAnomaly.get(item.anomaly_id)) : null }));
+    const pendingAnomalies = anomalies.filter((item) => !item.review);
+    const reviewedAnomalies = anomalies.filter((item) => item.review)
+      .sort((a, b) => String(b.review.reviewed_at).localeCompare(String(a.review.reviewed_at)));
     return {
       materials,
       inventory,
@@ -290,7 +321,8 @@ export async function getSupplyChainOverview({ tenantId } = {}) {
       consumptions:clone(tenant.consumptions.slice(0, 2000)),
       in_transit:clone(tenant.inTransit.slice(0, 1000)),
       purchase_recommendations:purchaseRecommendations.sort((a, b) => b.recommended_quantity - a.recommended_quantity),
-      anomaly_reviews:anomalies,
+      anomaly_reviews:clone(pendingAnomalies),
+      reviewed_anomaly_reviews:clone(reviewedAnomalies.slice(0, 20)),
       bom_warnings:bomWarnings.slice(0, 100),
       imports:clone(tenant.imports.slice(0, 30)),
       events:clone(tenant.events.slice(0, 100)),
@@ -304,10 +336,63 @@ export async function getSupplyChainOverview({ tenantId } = {}) {
         bom_count:[...latestBoms.values()].length,
         planned_surgery_count:plannedSurgeries.length,
         recommendation_count:purchaseRecommendations.filter((item) => item.recommended_quantity > 0).length,
-        anomaly_count:anomalies.length
+        anomaly_count:pendingAnomalies.length,
+        reviewed_anomaly_count:reviewedAnomalies.length
       },
       revision:tenant.revision
     };
+  });
+}
+
+export async function reviewSupplyChainAnomaly({ tenantId, actor, anomalyId, decision, note } = {}) {
+  const normalizedId = text(anomalyId, 40).toLowerCase();
+  const normalizedDecision = text(decision, 20).toLowerCase();
+  const normalizedNote = String(note ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 300);
+  if (!/^[a-f0-9]{24}$/.test(normalizedId)) throw fail("SUPPLY_CHAIN_ANOMALY_ID_INVALID", "异常复核编号无效");
+  if (!["accepted", "follow_up"].includes(normalizedDecision)) throw fail("SUPPLY_CHAIN_REVIEW_DECISION_INVALID", "复核结论无效");
+  if (normalizedNote.length < 2) throw fail("SUPPLY_CHAIN_REVIEW_NOTE_REQUIRED", "请填写至少2个字符的复核说明");
+  return withState(async (state) => {
+    const tenant = tenantState(state, tenantId);
+    const latestBoms = new Map();
+    for (const bom of tenant.procedureBoms) {
+      const key = `${bom.procedure_code}|${bom.sku}`;
+      if (!latestBoms.has(key) || Number(bom.version) > Number(latestBoms.get(key).version)) latestBoms.set(key, bom);
+    }
+    const materialBySku = new Map(tenant.materials.map((item) => [item.sku, item]));
+    const anomaly = buildAnomalyCandidates({ tenant, latestBoms, materialBySku })
+      .find((item) => item.anomaly_id === normalizedId && item.status === "review_required");
+    if (!anomaly) throw fail("SUPPLY_CHAIN_ANOMALY_NOT_FOUND", "异常项不存在或数据已变化，请刷新后重试", 404);
+    const timestamp = nowIso();
+    const existing = tenant.anomalyReviews.find((item) => item.anomaly_id === normalizedId);
+    const review = {
+      id:existing?.id || uid("screview"),
+      anomaly_id:normalizedId,
+      decision:normalizedDecision,
+      note:normalizedNote,
+      actor:text(actor, 120) || "system",
+      reviewed_at:timestamp,
+      snapshot:{
+        doctor:anomaly.doctor,
+        department:anomaly.department,
+        procedure_code:anomaly.procedure_code,
+        procedure_name:anomaly.procedure_name,
+        sku:anomaly.sku,
+        material_name:anomaly.material_name,
+        surgery_ids:anomaly.surgery_ids,
+        bom_versions:anomaly.bom_versions,
+        case_count:anomaly.case_count,
+        expected_quantity:anomaly.expected_quantity,
+        actual_quantity:anomaly.actual_quantity,
+        wasted_quantity:anomaly.wasted_quantity,
+        ratio:anomaly.ratio
+      }
+    };
+    if (existing) Object.assign(existing, review);
+    else tenant.anomalyReviews.unshift(review);
+    tenant.anomalyReviews = tenant.anomalyReviews.slice(0, 10_000);
+    appendEvent(tenant, "supply_chain.anomaly.reviewed", actor, `${anomaly.doctor} · ${anomaly.sku} · ${normalizedDecision}`);
+    tenant.revision += 1;
+    return clone(review);
   });
 }
 

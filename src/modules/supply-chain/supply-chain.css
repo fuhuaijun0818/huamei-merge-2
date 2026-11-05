@@ -8,7 +8,7 @@
 .supply-chain-warnings > div { display:flex; align-items:flex-start; gap:7px; color:#7b4d27; font-size:10px; line-height:1.55; }
 .supply-chain-warnings > div > svg { flex:none; margin-top:2px; }
 .supply-chain-warnings small { display:block; margin-top:2px; color:#9a8069; font-size:9px; }
-.supply-anomaly-overview { display:grid; grid-template-columns:minmax(280px,1.65fr) repeat(3,minmax(110px,.55fr)); gap:1px; overflow:hidden; border:1px solid #eadac8; border-radius:14px; background:#eadac8; }
+.supply-anomaly-overview { display:grid; grid-template-columns:minmax(260px,1.65fr) repeat(4,minmax(86px,.5fr)); gap:1px; overflow:hidden; border:1px solid #eadac8; border-radius:14px; background:#eadac8; }
 .supply-anomaly-overview > div { min-width:0; padding:14px 16px; background:#fffaf3; }
 .supply-anomaly-overview-lead { display:grid; grid-template-columns:34px minmax(0,1fr); align-items:center; gap:10px; background:#fff6ea !important; }
 .supply-anomaly-overview-lead > span { width:32px; height:32px; display:grid; place-items:center; border-radius:10px; color:#a45728; background:#f8e3cb; }
@@ -45,9 +45,22 @@
 .supply-anomaly-facts span { display:flex; flex-direction:column; gap:3px; padding:8px 9px; background:#fffdf9; }
 .supply-anomaly-facts small { color:#9a8675; font-size:8px; }
 .supply-anomaly-facts strong { color:#5d4433; font-size:12px; }
-.supply-anomaly-note { display:flex; align-items:flex-start; gap:6px; color:#8a705e; font-size:9px; line-height:1.55; }
+.supply-anomaly-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.supply-anomaly-note { display:flex; align-items:flex-start; min-width:0; gap:6px; color:#8a705e; font-size:9px; line-height:1.55; }
 .supply-anomaly-note svg { flex:none; margin-top:1px; color:#b67445; }
+.supply-anomaly-footer .btn { flex:none; height:30px; }
 .supply-anomaly-more { margin-top:10px; color:#8c7665; font-size:9px; text-align:right; }
+.supply-anomaly-reviewed { display:grid; gap:1px; overflow:hidden; margin-top:12px; border:1px solid #dce8e1; border-radius:11px; background:#dce8e1; }
+.supply-anomaly-reviewed-head { display:flex; align-items:center; gap:7px; padding:9px 11px; color:#456756; background:#f2f8f4; font-size:10px; }
+.supply-anomaly-reviewed-head span { margin-left:auto; color:#82978b; font-size:8px; }
+.supply-anomaly-reviewed-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 11px; background:#fbfefc; }
+.supply-anomaly-reviewed-row > span { display:flex; align-items:center; min-width:0; gap:7px; }
+.supply-anomaly-reviewed-row strong { overflow:hidden; color:#4e6357; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.supply-anomaly-reviewed-row small { max-width:52%; overflow:hidden; color:#8a9a90; font-size:8px; text-align:right; text-overflow:ellipsis; white-space:nowrap; }
+.supply-anomaly-review-context { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-bottom:14px; }
+.supply-anomaly-review-context > div { min-width:0; padding:11px 12px; display:grid; gap:4px; border:1px solid #eadfd3; border-radius:10px; background:#fbf8f3; }
+.supply-anomaly-review-context span { color:#998575; font-size:9px; }
+.supply-anomaly-review-context strong { color:#513d2f; font-size:11px; overflow-wrap:anywhere; }
 .supply-chain-roadmap { display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:start; gap:12px; }
 .supply-chain-roadmap > span { width:38px; height:38px; display:grid; place-items:center; border-radius:11px; color:#8c633f; background:#f6eadb; }
 .supply-chain-roadmap strong { display:block; color:#513d2e; font-size:13px; }
@@ -63,11 +76,16 @@
 }
 
 @media (max-width: 640px) {
-  .supply-anomaly-overview { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .supply-anomaly-overview { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .supply-anomaly-overview-lead { grid-column:1 / -1; }
   .supply-anomaly-list { grid-template-columns:1fr; }
   .supply-anomaly-legend { flex-wrap:wrap; }
   .supply-anomaly-legend small { width:100%; margin-left:0; }
+  .supply-anomaly-footer { align-items:stretch; flex-direction:column; }
+  .supply-anomaly-footer .btn { width:100%; }
+  .supply-anomaly-reviewed-row { align-items:flex-start; flex-direction:column; }
+  .supply-anomaly-reviewed-row small { max-width:100%; text-align:left; }
+  .supply-anomaly-review-context { grid-template-columns:1fr; }
   .supply-chain-roadmap { grid-template-columns:36px minmax(0,1fr); }
   .supply-chain-roadmap > .badge { grid-column:2; justify-self:start; }
   .supply-chain-prerequisites > div { grid-template-columns:26px minmax(0,1fr); }

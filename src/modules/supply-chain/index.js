@@ -14,6 +14,7 @@ const importMeta = Object.freeze({
   consumption:{ title:"实际消耗", description:"手术编号、SKU、实际消耗、领用、退回和报废数量" },
   "in-transit":{ title:"在途采购", description:"采购单号、SKU、在途数量和预计到货日期" }
 });
+const reviewDecisionLabel = Object.freeze({ accepted:"核查后无异常", follow_up:"需要后续跟进" });
 
 async function request(path, options = {}) {
   let response;
@@ -93,7 +94,16 @@ const recommendationTable = () => {
 };
 const anomalyTable = () => {
   const items = ui.data?.anomaly_reviews || [];
-  if (!items.length) return card("耗材损耗异常复核", `<div class="supply-chain-roadmap"><span>${icon("alert",20)}</span><div><strong>暂无可复核异常</strong><p>需要至少两个已完成同术式病例及实际消耗记录；异常仅作人工复核线索。</p></div>${badge("待数据", "outline")}</div>`, { className:"supply-chain-anomalies" });
+  const reviewedItems = ui.data?.reviewed_anomaly_reviews || [];
+  const reviewedCount = Number(ui.data?.metrics?.reviewed_anomaly_count || 0);
+  const reviewedSummary = reviewedItems.length ? `<div class="supply-anomaly-reviewed">
+    <div class="supply-anomaly-reviewed-head">${icon("check",15)}<strong>已登记复核 ${number(reviewedCount)} 项</strong><span>最近记录</span></div>
+    ${reviewedItems.slice(0, 4).map((item) => `<div class="supply-anomaly-reviewed-row">
+      <span>${badge(reviewDecisionLabel[item.review?.decision] || "已复核", item.review?.decision === "follow_up" ? "warning" : "success")}<strong>${escapeHtml(item.doctor)} · ${escapeHtml(item.material_name)}</strong></span>
+      <small>${escapeHtml(item.review?.note || "")} · ${escapeHtml(item.review?.actor || "")} · ${escapeHtml(formatDate(item.review?.reviewed_at))}</small>
+    </div>`).join("")}
+  </div>` : "";
+  if (!items.length) return card("耗材损耗异常复核", `<div class="supply-chain-roadmap"><span>${icon(reviewedCount ? "check" : "alert",20)}</span><div><strong>${reviewedCount ? "暂无待复核异常" : "暂无可复核异常"}</strong><p>${reviewedCount ? `已有 ${number(reviewedCount)} 项完成复核登记；如病例或BOM数据变化，系统会重新生成待复核项。` : "需要至少两个已完成同术式病例及实际消耗记录；异常仅作人工复核线索。"}</p></div>${badge(reviewedCount ? "已处理" : "待数据", reviewedCount ? "success" : "outline")}</div>${reviewedSummary}`, { className:"supply-chain-anomalies", subtitle:"按医生、科室、术式和耗材聚合已完成病例", action:badge("0项待核查", "success") });
   const visible = items.slice(0, 24);
   const maxDeviation = Math.round(Math.max(...items.map((item) => (Number(item.ratio) || 1) - 1)) * 100);
   const affectedDoctors = new Set(items.map((item) => item.doctor)).size;
@@ -132,7 +142,10 @@ const anomalyTable = () => {
         <span><small>超出标准</small><strong>${number(excess)}</strong></span>
         <span><small>记录报废</small><strong>${number(wasted)}</strong></span>
       </div>
-      <div class="supply-anomaly-note">${icon("shield",14)}<span>${escapeHtml(item.note || "请人工复核本次消耗差异。")}</span></div>
+      <div class="supply-anomaly-footer">
+        <div class="supply-anomaly-note">${icon("shield",14)}<span>${escapeHtml(item.note || "请人工复核本次消耗差异。")}</span></div>
+        <button class="btn small primary" data-action="supply-review-anomaly" data-id="${escapeHtml(item.anomaly_id)}">${icon("check",14)}登记复核</button>
+      </div>
     </article>`;
   }).join("");
   const more = items.length > visible.length
@@ -147,6 +160,7 @@ const anomalyTable = () => {
       <div class="supply-anomaly-stat"><span>最高偏差</span><strong>+${number(maxDeviation)}%</strong></div>
       <div class="supply-anomaly-stat"><span>涉及病例</span><strong>${number(affectedCases)}</strong></div>
       <div class="supply-anomaly-stat"><span>医生 / 耗材</span><strong>${number(affectedDoctors)} / ${number(affectedMaterials)}</strong></div>
+      <div class="supply-anomaly-stat"><span>已复核</span><strong>${number(reviewedCount)}</strong></div>
     </div>
     <div class="supply-anomaly-legend">
       <span><i class="actual"></i>实际消耗</span>
@@ -155,6 +169,7 @@ const anomalyTable = () => {
     </div>
     <div class="supply-anomaly-list">${cards}</div>
     ${more}
+    ${reviewedSummary}
   `, { subtitle:"按医生、科室、术式和耗材聚合已完成病例", className:"supply-chain-anomalies", action:badge(`${items.length}项待核查`, "warning") });
 };
 
@@ -231,6 +246,46 @@ const submitImport = async (form) => {
   await hydrate({ force:true });
   toast(`导入完成：新增 ${result.created} 条，更新 ${result.updated} 条`, "success");
 };
+const showAnomalyReviewModal = (anomalyId) => {
+  const item = (ui.data?.anomaly_reviews || []).find((candidate) => candidate.anomaly_id === anomalyId);
+  if (!item) {
+    toast("异常项已变化，请刷新后重试", "danger");
+    return;
+  }
+  openModal({
+    title:"登记异常复核结论",
+    desc:"复核不会修改原始消耗数据；系统将保存当前病例快照、复核人、时间和说明。",
+    wide:true,
+    body:`<form id="supply-anomaly-review-form">
+      <input type="hidden" name="anomaly_id" value="${escapeHtml(item.anomaly_id)}" />
+      <div class="supply-anomaly-review-context">
+        <div><span>复核对象</span><strong>${escapeHtml(item.doctor)} · ${escapeHtml(item.department || "未填科室")}</strong></div>
+        <div><span>术式 / 耗材</span><strong>${escapeHtml(item.procedure_name || item.procedure_code)} · ${escapeHtml(item.material_name)}</strong></div>
+        <div><span>实际 / 标准</span><strong>${number(item.actual_quantity)} / ${number(item.expected_quantity)}</strong></div>
+        <div><span>可比病例</span><strong>${number(item.case_count)} 例</strong></div>
+      </div>
+      <label class="form-group"><span class="form-label">复核结论</span><select class="form-control" name="decision" required><option value="accepted">${reviewDecisionLabel.accepted}，完成本次复核</option><option value="follow_up">${reviewDecisionLabel.follow_up}，登记跟进事项</option></select></label>
+      <label class="form-group"><span class="form-label">复核说明（至少2个字符）</span><textarea class="form-control" name="note" minlength="2" maxlength="300" required placeholder="填写核查依据、差异原因或后续处理安排"></textarea></label>
+      <div class="guardrail">${icon("shield",14)}该结论仅用于供应链人工复核审计，不会自动认定浪费、处罚或个人绩效。</div>
+    </form>`,
+    footer:`<button class="btn" data-action="modal-close">取消</button><button class="btn primary" data-action="supply-submit-anomaly-review" data-id="supply-anomaly-review-form">${icon("check",14)}保存复核结论</button>`
+  });
+};
+const submitAnomalyReview = async (form) => {
+  const formData = new FormData(form);
+  const result = await request("/api/admin/supply-chain/anomaly-reviews", {
+    method:"POST",
+    headers:{ "Idempotency-Key":key("supply-anomaly-review") },
+    body:JSON.stringify({
+      anomaly_id:formData.get("anomaly_id"),
+      decision:formData.get("decision"),
+      note:formData.get("note")
+    })
+  });
+  closeModal();
+  await hydrate({ force:true });
+  toast(`复核已登记：${reviewDecisionLabel[result.decision] || "已处理"}`, result.decision === "follow_up" ? "warning" : "success");
+};
 
 document.addEventListener("click", (event) => {
   const target = event.target.closest?.("[data-action]");
@@ -241,7 +296,12 @@ document.addEventListener("click", (event) => {
   if (target.dataset.action === "supply-import") showImportModal(target.dataset.id || "materials");
   if (target.dataset.action === "supply-download-template") downloadTemplate(target.dataset.id || "materials");
   if (target.dataset.action === "supply-export") void exportCsv(target.dataset.id || "materials").catch((error) => toast(error.message, "danger"));
+  if (target.dataset.action === "supply-review-anomaly") showAnomalyReviewModal(target.dataset.id || "");
   if (target.dataset.action === "supply-submit-import") {
+    const form = document.getElementById(target.dataset.id);
+    if (form) form.requestSubmit();
+  }
+  if (target.dataset.action === "supply-submit-anomaly-review") {
     const form = document.getElementById(target.dataset.id);
     if (form) form.requestSubmit();
   }
@@ -249,13 +309,14 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("submit", async (event) => {
   const form = event.target;
-  if (form.id !== "supply-import-form") return;
+  if (!["supply-import-form", "supply-anomaly-review-form"].includes(form.id)) return;
   event.preventDefault();
   event.stopImmediatePropagation();
   if (form.dataset.submitting === "true") return;
   form.dataset.submitting = "true";
   try {
-    await submitImport(form);
+    if (form.id === "supply-import-form") await submitImport(form);
+    else await submitAnomalyReview(form);
   } catch (error) {
     const details = Array.isArray(error.details) && error.details.length
       ? `：${error.details.slice(0, 5).map((item) => `第${item.line || "?"}行 ${item.message || item.sku || ""}`).join("；")}`

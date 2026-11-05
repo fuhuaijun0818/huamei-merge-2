@@ -250,4 +250,55 @@ assert.deepEqual(
   }
 );
 
+await assert.rejects(
+  supply.reviewSupplyChainAnomaly({
+    tenantId,
+    actor,
+    anomalyId:anomaly.anomaly_id,
+    decision:"ignore",
+    note:"不执行"
+  }),
+  (error) => error.code === "SUPPLY_CHAIN_REVIEW_DECISION_INVALID"
+);
+await assert.rejects(
+  supply.reviewSupplyChainAnomaly({
+    tenantId,
+    actor,
+    anomalyId:"0".repeat(24),
+    decision:"accepted",
+    note:"不存在"
+  }),
+  (error) => error.code === "SUPPLY_CHAIN_ANOMALY_NOT_FOUND" && error.status === 404
+);
+const review = await supply.reviewSupplyChainAnomaly({
+  tenantId,
+  actor,
+  anomalyId:anomaly.anomaly_id,
+  decision:"accepted",
+  note:"已核对套包配置，本次差异可解释"
+});
+assert.equal(review.anomaly_id, anomaly.anomaly_id);
+assert.equal(review.decision, "accepted");
+assert.equal(review.snapshot.actual_quantity, 6);
+const reviewedOverview = await supply.getSupplyChainOverview({ tenantId });
+assert.equal(reviewedOverview.metrics.anomaly_count, 0);
+assert.equal(reviewedOverview.metrics.reviewed_anomaly_count, 1);
+assert.equal(reviewedOverview.anomaly_reviews.length, 0);
+assert.equal(reviewedOverview.reviewed_anomaly_reviews[0].review.note, "已核对套包配置，本次差异可解释");
+assert.equal(reviewedOverview.events[0].type, "supply_chain.anomaly.reviewed");
+
+await supply.importSupplyChainCsv({
+  tenantId,
+  actor,
+  type:"consumption",
+  payload:{
+    file_name:"病例消耗更新.csv",
+    csv_text:"surgery_id,sku,actual_consumed_quantity,used_quantity,returned_quantity,wasted_quantity\r\nSURG-H1,MAT-001,4,4,0,0.5\r\n"
+  }
+});
+const changedOverview = await supply.getSupplyChainOverview({ tenantId });
+assert.equal(changedOverview.metrics.anomaly_count, 1);
+assert.equal(changedOverview.metrics.reviewed_anomaly_count, 0, "changed source data must produce a new pending anomaly");
+assert.notEqual(changedOverview.anomaly_reviews[0].anomaly_id, anomaly.anomaly_id);
+
 console.log("supply-chain-operations: passed");

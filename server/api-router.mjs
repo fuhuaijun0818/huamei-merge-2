@@ -92,7 +92,7 @@ import {
   submitEmployeeExpenseClaim,
   writeOffPettyCash
 } from "./finance-operations.mjs";
-import { exportSupplyChainCsv, getSupplyChainOverview, importSupplyChainCsv } from "./supply-chain-operations.mjs";
+import { exportSupplyChainCsv, getSupplyChainOverview, importSupplyChainCsv, reviewSupplyChainAnomaly } from "./supply-chain-operations.mjs";
 
 export const DEMO_API_KEY = "hm_local_demo_key_2026";
 const API_KEY = process.env.HUAMEI_API_KEY || DEMO_API_KEY;
@@ -788,9 +788,11 @@ export async function handleApiRequest(request, response) {
     const method = request.method;
     const exportRoute = url.pathname === "/api/admin/supply-chain/export.csv";
     const importMatch = url.pathname.match(/^\/api\/admin\/supply-chain\/imports\/(materials|inventory|bom|surgeries|consumption|in-transit)$/i);
+    const anomalyReviewRoute = url.pathname === "/api/admin/supply-chain/anomaly-reviews";
     const supported = (method === "GET" && url.pathname === "/api/admin/supply-chain")
       || (method === "GET" && exportRoute)
-      || (method === "POST" && importMatch);
+      || (method === "POST" && importMatch)
+      || (method === "POST" && anomalyReviewRoute);
     if (!supported) {
       sendError(request, response, requestId, 404, "API_NOT_FOUND", "未找到指定供应链管理端点");
       return true;
@@ -808,7 +810,7 @@ export async function handleApiRequest(request, response) {
         principal,
         requestId,
         request,
-        action:`management.supply_chain.${importMatch ? `${importMatch[1]}_import` : exportRoute ? "export" : "read"}`,
+        action:`management.supply_chain.${importMatch ? `${importMatch[1]}_import` : anomalyReviewRoute ? "anomaly_review" : exportRoute ? "export" : "read"}`,
         resourceType:"supply_chain",
         resourceId:principal.tenantId
       });
@@ -833,7 +835,7 @@ export async function handleApiRequest(request, response) {
     }
     const idempotencyKey = String(request.headers["idempotency-key"] || "").trim();
     if (idempotencyKey.length < 8 || idempotencyKey.length > 128) {
-      sendError(request, response, requestId, 400, "IDEMPOTENCY_KEY_REQUIRED", "供应链导入必须提供8–128字符的Idempotency-Key");
+      sendError(request, response, requestId, 400, "IDEMPOTENCY_KEY_REQUIRED", "供应链写操作必须提供8–128字符的Idempotency-Key");
       return true;
     }
     let payload;
@@ -844,6 +846,17 @@ export async function handleApiRequest(request, response) {
       return true;
     }
     try {
+      if (anomalyReviewRoute) {
+        const data = await reviewSupplyChainAnomaly({
+          tenantId:principal.tenantId,
+          actor:principal.subject,
+          anomalyId:payload.anomaly_id,
+          decision:payload.decision,
+          note:payload.note
+        });
+        sendJson(request, response, requestId, 201, { data, request_id:requestId });
+        return true;
+      }
       const data = await importSupplyChainCsv({
         tenantId:principal.tenantId,
         actor:principal.subject,
