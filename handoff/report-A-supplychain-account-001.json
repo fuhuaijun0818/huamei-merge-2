@@ -1,19 +1,26 @@
 {
   "role": "A",
   "task_id": "supplychain-account-001",
-  "summary": "新增“供应链管理员”固定岗位和本机专用账号supplychain.specialist。账号拥有独立的供应链管理工作台入口、供应链读取/维护/导出能力和员工费用申请入口，不具备客户、会话、知识发布、财务审批、账号管理或系统配置权限。供应链工作台当前如实标记为数据接入准备中，不生成虚构库存、预测或补货数据。",
+  "summary": "新增“供应链管理员”固定岗位和本机专用账号supplychain.specialist。账号拥有独立供应链工作台、供应链读取/维护/导出能力和员工费用申请入口，不具备客户、会话、知识发布、财务审批、账号管理或系统配置权限。首个MVP已实现耗材主数据CSV导入、批次库存与效期CSV导入、库存汇总、临期/过期预警和CSV导出；BOM、手术排程、实际消耗、补货建议和损耗分析仍待后续数据接入。",
   "acceptance_steps": [
     "使用supplychain.specialist登录；预期默认进入#/supply-chain，侧边栏仅显示“费用申请”和“供应链管理”。",
     "检查身份能力；预期仅包含supplychain:read、supplychain:manage和supplychain:export。",
     "访问财务、人事、全局账号和知识发布接口；预期均返回403。",
     "直接访问客户页面；预期被退回供应链管理工作台。",
-    "打开供应链管理页；预期显示耗材主数据、批次库存、手术排程、术式BOM和实际消耗五项待接入数据，不展示虚构库存或采购结果。"
+    "打开供应链管理页，下载耗材CSV模板并导入2个SKU；预期显示SKU数量和耗材主数据。",
+    "下载库存CSV模板并导入批次、库位、数量、有效期；预期显示可用库存、预留、隔离、最近有效期，并正确标记正常、90天内到期和已过期批次。",
+    "导入包含未知SKU或格式错误的库存CSV；预期整批拒绝，不产生部分写入。"
   ],
   "tests": [
     {
       "command": "Chrome CDP supplychain.specialist 真实登录",
       "status": "pass",
-      "evidence": "供应链账号登录后默认进入#/supply-chain；可见导航仅“费用申请”和“供应链管理”；费用申请接口200，财务、人事、全局账号和知识发布接口403；直接访问客户页面被退回供应链管理工作台。"
+      "evidence": "供应链账号登录后默认进入#/supply-chain；可见导航仅“费用申请”和“供应链管理”；供应链与费用申请接口200，财务、人事、全局账号和知识发布接口403；通过页面成功导入2个耗材SKU和2个批次，页面显示可用库存100、已过期可用库存20、90天临期1项；直接访问客户页面被退回供应链管理工作台。"
+    },
+    {
+      "command": "node tests/supply-chain-operations.mjs",
+      "status": "pass",
+      "evidence": "耗材CSV支持中文表头、BOM、引号与逗号；库存导入汇总可用数量、预留、隔离和最近效期；临期/过期状态正确；未知SKU库存导入整批失败且没有部分写入；耗材更新保留库存关联；耗材与库存CSV导出通过。"
     },
     {
       "command": "node tests/phase-one-role-policy.mjs",
@@ -48,7 +55,7 @@
     {
       "command": "npm run team:verify",
       "status": "pass",
-      "evidence": "团队基线回归23项全部通过。"
+      "evidence": "团队基线回归24项全部通过。"
     }
   ],
   "shared_changes": [
@@ -61,6 +68,21 @@
       "path": "src/role-catalog.js",
       "owner": "C",
       "change": "新增R-SUPPLYCHAIN供应链管理员角色和supplychain:read/manage/export能力"
+    },
+    {
+      "path": "server/supply-chain-operations.mjs",
+      "owner": "shared",
+      "change": "新增耗材主数据、批次库存、CSV导入校验、效期状态、汇总与CSV导出服务"
+    },
+    {
+      "path": "src/modules/supply-chain/",
+      "owner": "shared",
+      "change": "新增耗材和库存CSV导入、模板下载、数据表、效期预警及导出页面"
+    },
+    {
+      "path": "server/api-router.mjs",
+      "owner": "shared",
+      "change": "新增供应链总览、耗材/库存CSV导入和CSV导出接口；分别要求supplychain:read/manage/export"
     },
     {
       "path": "server/platform/phase-one-role-policy.mjs",
@@ -86,6 +108,21 @@
       "path": "index.html",
       "owner": "shared",
       "change": "加载供应链模块样式"
+    },
+    {
+      "path": ".env.example",
+      "owner": "shared",
+      "change": "新增HUAMEI_SUPPLY_CHAIN_STORE_FILE"
+    },
+    {
+      "path": "package.json",
+      "owner": "shared",
+      "change": "新增test:supply-chain-operations脚本"
+    },
+    {
+      "path": "scripts/team-verify.mjs",
+      "owner": "shared",
+      "change": "团队回归加入supply-chain-operations"
     },
     {
       "path": "devkit/fixtures.mjs",
@@ -123,12 +160,38 @@
       "change": "更新固定角色目录并验证供应链岗位"
     },
     {
+      "path": "tests/supply-chain-operations.mjs",
+      "owner": "shared",
+      "change": "新增耗材/库存CSV导入、效期、原子失败和导出回归"
+    },
+    {
       "path": "tests/onboarding/mock-contract.mjs",
       "owner": "shared",
       "change": "Mock账号数量更新为18"
     }
   ],
-  "api_changes": [],
+  "api_changes": [
+    {
+      "interface": "GET /api/admin/supply-chain",
+      "change": "读取耗材、库存批次、导入记录和有效期汇总；要求supplychain:read",
+      "breaking": false
+    },
+    {
+      "interface": "POST /api/admin/supply-chain/imports/materials",
+      "change": "导入或更新耗材主数据CSV；要求supplychain:manage",
+      "breaking": false
+    },
+    {
+      "interface": "POST /api/admin/supply-chain/imports/inventory",
+      "change": "导入或更新批次库存CSV；SKU必须已存在，全部行有效才写入；要求supplychain:manage",
+      "breaking": false
+    },
+    {
+      "interface": "GET /api/admin/supply-chain/export.csv",
+      "change": "导出耗材主数据或库存批次CSV；要求supplychain:export",
+      "breaking": false
+    }
+  ],
   "migrations": [
     {
       "path": "db/migrations/021_supplychain_role.sql",
@@ -137,12 +200,15 @@
     }
   ],
   "dependency_changes": [],
-  "environment_variable_names": [],
+  "environment_variable_names": [
+    "HUAMEI_SUPPLY_CHAIN_STORE_FILE"
+  ],
   "known_limitations": [
     "当前创建的是通用供应链服务账号，真实姓名显示为“供应链管理员”；如指定具体员工，应通过账号编辑改为其真实姓名。",
-    "供应链工作台当前为数据和功能接入准备页，尚未实现耗材主数据、库存流水、采购建议、手术排程需求预测或损耗计算。",
+    "当前MVP已实现耗材主数据、批次库存、效期预警和CSV导入导出；仍使用本地JSON，不是生产数据库。",
+    "尚未实现术式BOM、手术排程、实际消耗、净需求计算、MOQ补货建议、在途采购和损耗异常分析。",
     "本机账号密码仅保存在被Git忽略的.team-dev/supplychain-account.private.json，不进入代码库。",
     "后续真实供应链功能需要先接入耗材、批次库存、在途、MOQ、手术排程、术式BOM和实际消耗数据。"
   ],
-  "rollback": "回退供应链角色目录、能力常量、供应链前端、导航和账号路由接入，并回退021迁移；不删除HUAMEI_FINANCE_STORE_FILE或任何业务数据。"
+  "rollback": "回退供应链角色目录、能力常量、供应链服务/前端、CSV导入导出、导航和账号路由接入，并回退021迁移；不删除HUAMEI_SUPPLY_CHAIN_STORE_FILE中的既有数据。"
 }

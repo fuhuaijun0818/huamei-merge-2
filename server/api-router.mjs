@@ -92,6 +92,7 @@ import {
   submitEmployeeExpenseClaim,
   writeOffPettyCash
 } from "./finance-operations.mjs";
+import { exportSupplyChainCsv, getSupplyChainOverview, importSupplyChainCsv } from "./supply-chain-operations.mjs";
 
 export const DEMO_API_KEY = "hm_local_demo_key_2026";
 const API_KEY = process.env.HUAMEI_API_KEY || DEMO_API_KEY;
@@ -779,6 +780,80 @@ export async function handleApiRequest(request, response) {
       sendJson(request, response, requestId, 201, { data, request_id:requestId });
     } catch (error) {
       sendError(request, response, requestId, Number(error.status) || 400, error.code || "EXPENSE_CLAIM_SUBMIT_FAILED", error.message || "费用申请提交失败", error.details || []);
+    }
+    return true;
+  }
+
+  if (url.pathname.startsWith("/api/admin/supply-chain")) {
+    const method = request.method;
+    const exportRoute = url.pathname === "/api/admin/supply-chain/export.csv";
+    const materialImport = url.pathname === "/api/admin/supply-chain/imports/materials";
+    const inventoryImport = url.pathname === "/api/admin/supply-chain/imports/inventory";
+    const supported = (method === "GET" && url.pathname === "/api/admin/supply-chain")
+      || (method === "GET" && exportRoute)
+      || (method === "POST" && (materialImport || inventoryImport));
+    if (!supported) {
+      sendError(request, response, requestId, 404, "API_NOT_FOUND", "未找到指定供应链管理端点");
+      return true;
+    }
+    let principal;
+    try {
+      principal = await authorizeManagementRequest(request, {
+        requiredCapabilities:[exportRoute
+          ? PHASE_ONE_CAPABILITIES.supplyChainExport
+          : method === "GET" ? PHASE_ONE_CAPABILITIES.supplyChainRead : PHASE_ONE_CAPABILITIES.supplyChainManage],
+        tenantId:PUBLIC_TENANT_ID,
+        tenantField:"token.tenant_ids"
+      });
+      await recordManagementAccess({
+        principal,
+        requestId,
+        request,
+        action:`management.supply_chain.${materialImport ? "materials_import" : inventoryImport ? "inventory_import" : exportRoute ? "export" : "read"}`,
+        resourceType:"supply_chain",
+        resourceId:principal.tenantId
+      });
+    } catch (error) {
+      sendManagementAuthorizationError(request, response, requestId, error);
+      return true;
+    }
+    if (method === "GET") {
+      try {
+        if (exportRoute) {
+          const type = url.searchParams.get("type") === "inventory" ? "inventory" : "materials";
+          const exported = await exportSupplyChainCsv({ tenantId:principal.tenantId, type });
+          sendDownload(request, response, requestId, 200, exported.buffer, "text/csv; charset=utf-8", exported.file_name);
+        } else {
+          const data = await getSupplyChainOverview({ tenantId:principal.tenantId });
+          sendJson(request, response, requestId, 200, { data, request_id:requestId });
+        }
+      } catch (error) {
+        sendError(request, response, requestId, Number(error.status) || 500, error.code || "SUPPLY_CHAIN_READ_FAILED", error.message || "供应链数据读取失败", error.details || []);
+      }
+      return true;
+    }
+    const idempotencyKey = String(request.headers["idempotency-key"] || "").trim();
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 128) {
+      sendError(request, response, requestId, 400, "IDEMPOTENCY_KEY_REQUIRED", "供应链导入必须提供8–128字符的Idempotency-Key");
+      return true;
+    }
+    let payload;
+    try {
+      payload = await readJsonBody(request, 3 * 1024 * 1024);
+    } catch (error) {
+      sendError(request, response, requestId, error.code === "BODY_TOO_LARGE" ? 413 : 400, error.code || "INVALID_JSON", "请求体不是有效JSON");
+      return true;
+    }
+    try {
+      const data = await importSupplyChainCsv({
+        tenantId:principal.tenantId,
+        actor:principal.subject,
+        type:materialImport ? "materials" : "inventory",
+        payload
+      });
+      sendJson(request, response, requestId, 201, { data, request_id:requestId });
+    } catch (error) {
+      sendError(request, response, requestId, Number(error.status) || 400, error.code || "SUPPLY_CHAIN_IMPORT_FAILED", error.message || "供应链数据导入失败", error.details || []);
     }
     return true;
   }

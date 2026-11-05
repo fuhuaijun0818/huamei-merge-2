@@ -1,5 +1,6 @@
 .supply-chain-page .page-head { align-items:flex-start; }
 .supply-chain-status { display:flex; align-items:center; align-self:flex-start; }
+.supply-chain-body { display:grid; gap:16px; }
 .supply-chain-metrics { margin-bottom:0; }
 .supply-chain-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .supply-chain-roadmap { display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:start; gap:12px; }
