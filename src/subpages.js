@@ -499,7 +499,7 @@ function administrationUsers() {
 
 function administrationRoles() {
   const roles = store.state.managementRoles || [];
-  return subpage("administration", "roles", "角色管理", "角色说明（只读）：系统管理员、售前顾问、内容专员、发布与索引管理员、质量与运营人员、人事专员按职责分离；人事专员仅可访问员工档案、入职离职、简历筛选和人事报告。",
+  return subpage("administration", "roles", "角色管理", "角色说明（只读）：系统管理员、售前顾问、内容专员、发布与索引管理员、质量与运营人员、供应链管理员、财务专员、人事专员按职责分离；供应链管理员负责耗材、库存、补货建议和损耗复核。",
     `<section class="card">${roles.length ? table(["固定角色", "数据范围", "一期职责", "状态", "变更方式"], roles.map((item) => ["<strong>" + escapeHtml(item.name) + "</strong>", escapeHtml(item.scope), (item.permissions || []).map((permission) => badge(permission,"outline")).join(" ") || "—", badge(item.status, item.status === "启用" ? "success" : "warning"), "本期只读，不支持新增、编辑或删除"])) : empty("固定角色加载失败", "请重新连接管理数据服务；一期不允许手工创建角色。")}</section><div class="guardrail" style="margin-top:16px">${icon("shield",14)}角色扩展、跨科室数据授权或新增高风险操作，需在后续版本完成权限设计与安全评审后再开放。</div>`);
 }
 

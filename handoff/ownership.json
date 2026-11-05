@@ -142,6 +142,7 @@
     "src/modules/hr/",
     "src/modules/finance/",
     "src/modules/expense-claims/",
+    "src/modules/supply-chain/",
     "tests/hr-operations.mjs",
     "README.md",
     "AGENTS.md",

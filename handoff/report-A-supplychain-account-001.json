@@ -1,0 +1,148 @@
+{
+  "role": "A",
+  "task_id": "supplychain-account-001",
+  "summary": "新增“供应链管理员”固定岗位和本机专用账号supplychain.specialist。账号拥有独立的供应链管理工作台入口、供应链读取/维护/导出能力和员工费用申请入口，不具备客户、会话、知识发布、财务审批、账号管理或系统配置权限。供应链工作台当前如实标记为数据接入准备中，不生成虚构库存、预测或补货数据。",
+  "acceptance_steps": [
+    "使用supplychain.specialist登录；预期默认进入#/supply-chain，侧边栏仅显示“费用申请”和“供应链管理”。",
+    "检查身份能力；预期仅包含supplychain:read、supplychain:manage和supplychain:export。",
+    "访问财务、人事、全局账号和知识发布接口；预期均返回403。",
+    "直接访问客户页面；预期被退回供应链管理工作台。",
+    "打开供应链管理页；预期显示耗材主数据、批次库存、手术排程、术式BOM和实际消耗五项待接入数据，不展示虚构库存或采购结果。"
+  ],
+  "tests": [
+    {
+      "command": "Chrome CDP supplychain.specialist 真实登录",
+      "status": "pass",
+      "evidence": "供应链账号登录后默认进入#/supply-chain；可见导航仅“费用申请”和“供应链管理”；费用申请接口200，财务、人事、全局账号和知识发布接口403；直接访问客户页面被退回供应链管理工作台。"
+    },
+    {
+      "command": "node tests/phase-one-role-policy.mjs",
+      "status": "pass",
+      "evidence": "供应链管理员能力严格收敛为supplychain:read、supplychain:manage、supplychain:export；其他普通岗位均无供应链能力。"
+    },
+    {
+      "command": "node tests/management-role-navigation.mjs",
+      "status": "pass",
+      "evidence": "供应链管理员可进入独立supply-chain页面，并可进入所有员工共用的expense-claims页面。"
+    },
+    {
+      "command": "node tests/management-local-actions.mjs",
+      "status": "pass",
+      "evidence": "固定角色目录包含供应链管理员；角色仍为只读；管理端既有动作覆盖和持久化测试通过。"
+    },
+    {
+      "command": "node tests/onboarding/mock-contract.mjs",
+      "status": "pass",
+      "evidence": "Mock契约60项通过，两个模拟租户均包含供应链管理员账号并可登录。"
+    },
+    {
+      "command": "node --env-file=.env.local tests/postgres-five-role-http-integration.mjs",
+      "status": "pass",
+      "evidence": "真实PostgreSQL账号矩阵覆盖新增供应链岗位；供应链、财务和HR权限边界不扩大，员工费用申请仍可用。"
+    },
+    {
+      "command": "node --env-file=.env.local --input-type=module -e \"process.env.HUAMEI_DATABASE_URL=process.env.HUAMEI_MIGRATION_DATABASE_URL; await import('./scripts/run-migrations.mjs');\"",
+      "status": "pass",
+      "evidence": "021_supplychain_role.sql已成功应用，management_accounts岗位约束现包含供应链管理员。"
+    },
+    {
+      "command": "npm run team:verify",
+      "status": "pass",
+      "evidence": "团队基线回归23项全部通过。"
+    }
+  ],
+  "shared_changes": [
+    {
+      "path": "handoff/ownership.json",
+      "owner": "shared",
+      "change": "申报供应链前端模块为共享评审路径"
+    },
+    {
+      "path": "src/role-catalog.js",
+      "owner": "C",
+      "change": "新增R-SUPPLYCHAIN供应链管理员角色和supplychain:read/manage/export能力"
+    },
+    {
+      "path": "server/platform/phase-one-role-policy.mjs",
+      "owner": "shared",
+      "change": "新增供应链读取、维护和导出能力常量"
+    },
+    {
+      "path": "src/app.js",
+      "owner": "shared",
+      "change": "接入供应链工作台；仅供应链管理员和超级管理员可访问，供应链管理员默认落点收敛到该页面"
+    },
+    {
+      "path": "src/ui.js",
+      "owner": "shared",
+      "change": "经营治理导航新增供应链管理入口"
+    },
+    {
+      "path": "src/subpages.js",
+      "owner": "shared",
+      "change": "岗位只读说明加入供应链管理员"
+    },
+    {
+      "path": "index.html",
+      "owner": "shared",
+      "change": "加载供应链模块样式"
+    },
+    {
+      "path": "devkit/fixtures.mjs",
+      "owner": "shared",
+      "change": "Mock每租户新增供应链管理员账号"
+    },
+    {
+      "path": "devkit/seed.mjs",
+      "owner": "shared",
+      "change": "更新Mock账号数量说明"
+    },
+    {
+      "path": "devkit/seed-postgres.mjs",
+      "owner": "shared",
+      "change": "更新开发库账号数量说明"
+    },
+    {
+      "path": "docs/onboarding/00_开始开发.md",
+      "owner": "shared",
+      "change": "更新Mock九角色与18个账号说明"
+    },
+    {
+      "path": "tests/phase-one-role-policy.mjs",
+      "owner": "C",
+      "change": "新增供应链角色能力和其他岗位拒绝断言"
+    },
+    {
+      "path": "tests/management-role-navigation.mjs",
+      "owner": "C",
+      "change": "新增供应链管理员页面分发断言"
+    },
+    {
+      "path": "tests/management-local-actions.mjs",
+      "owner": "shared",
+      "change": "更新固定角色目录并验证供应链岗位"
+    },
+    {
+      "path": "tests/onboarding/mock-contract.mjs",
+      "owner": "shared",
+      "change": "Mock账号数量更新为18"
+    }
+  ],
+  "api_changes": [],
+  "migrations": [
+    {
+      "path": "db/migrations/021_supplychain_role.sql",
+      "change": "management_accounts岗位约束新增供应链管理员",
+      "applied": true
+    }
+  ],
+  "dependency_changes": [],
+  "environment_variable_names": [],
+  "known_limitations": [
+    "当前创建的是通用供应链服务账号，真实姓名显示为“供应链管理员”；如指定具体员工，应通过账号编辑改为其真实姓名。",
+    "供应链工作台当前为数据和功能接入准备页，尚未实现耗材主数据、库存流水、采购建议、手术排程需求预测或损耗计算。",
+    "本机账号密码仅保存在被Git忽略的.team-dev/supplychain-account.private.json，不进入代码库。",
+    "后续真实供应链功能需要先接入耗材、批次库存、在途、MOQ、手术排程、术式BOM和实际消耗数据。"
+  ],
+  "rollback": "回退供应链角色目录、能力常量、供应链前端、导航和账号路由接入，并回退021迁移；不删除HUAMEI_FINANCE_STORE_FILE或任何业务数据。"
+}

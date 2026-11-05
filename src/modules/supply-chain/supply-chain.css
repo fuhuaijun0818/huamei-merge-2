@@ -1,0 +1,24 @@
+.supply-chain-page .page-head { align-items:flex-start; }
+.supply-chain-status { display:flex; align-items:center; align-self:flex-start; }
+.supply-chain-metrics { margin-bottom:0; }
+.supply-chain-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.supply-chain-roadmap { display:grid; grid-template-columns:40px minmax(0,1fr) auto; align-items:start; gap:12px; }
+.supply-chain-roadmap > span { width:38px; height:38px; display:grid; place-items:center; border-radius:11px; color:#8c633f; background:#f6eadb; }
+.supply-chain-roadmap strong { display:block; color:#513d2e; font-size:13px; }
+.supply-chain-roadmap p { margin:6px 0 0; color:#8f7d6c; font-size:10px; line-height:1.65; }
+.supply-chain-prerequisites { display:grid; gap:1px; overflow:hidden; border:1px solid #eadfce; border-radius:12px; background:#eadfce; }
+.supply-chain-prerequisites > div { display:grid; grid-template-columns:28px minmax(0,1fr) auto; align-items:center; gap:10px; padding:11px 12px; background:#fffdf9; }
+.supply-chain-prerequisites > div > span { width:24px; height:24px; display:grid; place-items:center; border-radius:7px; color:#8c633f; background:#f6eadb; font-size:10px; }
+.supply-chain-prerequisites strong { display:block; color:#594536; font-size:11px; }
+.supply-chain-prerequisites small { display:block; margin-top:3px; color:#998775; font-size:9px; }
+
+@media (max-width: 900px) {
+  .supply-chain-grid { grid-template-columns:1fr; }
+}
+
+@media (max-width: 640px) {
+  .supply-chain-roadmap { grid-template-columns:36px minmax(0,1fr); }
+  .supply-chain-roadmap > .badge { grid-column:2; justify-self:start; }
+  .supply-chain-prerequisites > div { grid-template-columns:26px minmax(0,1fr); }
+  .supply-chain-prerequisites .badge { grid-column:2; justify-self:start; }
+}

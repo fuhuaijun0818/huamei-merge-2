@@ -50,6 +50,7 @@ const administrator = { roles:["管理员"] };
 const presales = { roles:["售前人员"] };
 const hrSpecialist = { roles:["人事专员"] };
 const financeSpecialist = { roles:["财务专员"] };
+const supplyChainSpecialist = { roles:["供应链管理员"] };
 assert.equal(
   hasPhaseOneCapability(administrator, PHASE_ONE_CAPABILITIES.agentsManage),
   true,
@@ -122,6 +123,21 @@ const authorizedFinance = authorizeManagementPrincipal({
   tenantId:"tenant-a"
 });
 assert.equal(authorizedFinance.phaseOneRole, PHASE_ONE_BUSINESS_ROLES.finance);
+assert.deepEqual(
+  [...phaseOneCapabilitiesFor(supplyChainSpecialist)].sort(),
+  [
+    PHASE_ONE_CAPABILITIES.supplyChainRead,
+    PHASE_ONE_CAPABILITIES.supplyChainManage,
+    PHASE_ONE_CAPABILITIES.supplyChainExport
+  ].sort(),
+  "供应链管理员能力必须严格收敛为供应链读取、办理和导出"
+);
+for (const role of ["系统管理员","售前顾问","内容专员","发布与索引管理员","质量与运营人员","人事专员","财务专员","超级管理员"]) {
+  if (role === "超级管理员") continue;
+  assert.equal(hasPhaseOneCapability({ roles:[role] }, PHASE_ONE_CAPABILITIES.supplyChainRead), false, `${role}不得访问供应链模块`);
+  assert.equal(hasPhaseOneCapability({ roles:[role] }, PHASE_ONE_CAPABILITIES.supplyChainManage), false, `${role}不得办理供应链业务`);
+  assert.equal(hasPhaseOneCapability({ roles:[role] }, PHASE_ONE_CAPABILITIES.supplyChainExport), false, `${role}不得导出供应链数据`);
+}
 for (const capability of [
   PHASE_ONE_CAPABILITIES.usersManage,
   PHASE_ONE_CAPABILITIES.hrRead,
@@ -288,7 +304,7 @@ assert.throws(
 
 console.log("✓ 一期管理员/售前人员角色策略、技术权限兼容和本地默认管理员身份通过");
 
-for (const role of ["系统管理员","内容专员","质量与运营人员","售前顾问","人事专员","财务专员"]) {
+for (const role of ["系统管理员","内容专员","质量与运营人员","售前顾问","人事专员","财务专员","供应链管理员"]) {
   assert.equal(hasPhaseOneCapability({roles:[role,"knowledge.publisher"]},"knowledge:publish"),false);
   assert.ok(!effectiveManagementRolesFor({roles:[role,"knowledge.publisher"]}).includes("knowledge.publisher"));
 }

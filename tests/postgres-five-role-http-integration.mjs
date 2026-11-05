@@ -70,7 +70,7 @@ try{
  const disabled=await call('administrator','/api/admin/accounts',{subject:content.subject,expected_version:1,display_name:'fixture',role:'content',departments:['*'],enabled:false});assert.equal(disabled.status,200);
  assert.equal((await call('content','/api/admin/identity')).status,403,'disabled credentials must not authenticate');
  assert.equal((await call('publisher','/api/admin/knowledge/publications',{document_ids:['missing']})).status,403);
- console.log('PASS: six real Basic accounts, HR provisioning, employee expense submission to finance approval, finance-only approval backend, role claims, content creation and immediate account revocation');
+ console.log('PASS: eight real Basic accounts, supply-chain role isolation, HR provisioning, employee expense submission to finance approval, finance-only approval backend and immediate account revocation');
 }finally{
  child.kill('SIGTERM');await Promise.race([exited,delay(1500)]);if(child.exitCode===null)child.kill('SIGKILL');await closePostgresClient();
 }

@@ -11,9 +11,10 @@ for(const [role,route,expected] of [
  ['内容专员','workbench','home'],['内容专员','knowledge','knowledge'],['发布与索引管理员','knowledge','knowledge'],['质量与运营人员','workbench','home'],
  ['人事专员','hr','hr'],['财务专员','finance','finance'],
  ['系统管理员','expense-claims','expense'],['售前顾问','expense-claims','expense'],['内容专员','expense-claims','expense'],
- ['发布与索引管理员','expense-claims','expense'],['质量与运营人员','expense-claims','expense'],['人事专员','expense-claims','expense'],['财务专员','expense-claims','expense']
+ ['发布与索引管理员','expense-claims','expense'],['质量与运营人员','expense-claims','expense'],['人事专员','expense-claims','expense'],['财务专员','expense-claims','expense'],
+ ['供应链管理员','expense-claims','expense'],['供应链管理员','supply-chain','supply']
 ]){
- const sandbox={ui:{managementIdentity:{role}},roleCatalogEntry,routeInfo:()=>({route}),location:{hash:'#/'+route},history:{replaceState:()=>{}},managedAccountsPage:()=> 'accounts',systemIntegrationsPage:()=> 'integrations',roleWorkbenchPage:()=> 'home',renderHrPage:()=> 'hr',renderFinancePage:()=> 'finance',renderExpenseClaimsPage:()=> 'expense',productionKnowledgeGovernancePage:()=> 'knowledge'};
+ const sandbox={ui:{managementIdentity:{role}},roleCatalogEntry,routeInfo:()=>({route}),location:{hash:'#/'+route},history:{replaceState:()=>{}},managedAccountsPage:()=> 'accounts',systemIntegrationsPage:()=> 'integrations',roleWorkbenchPage:()=> 'home',renderHrPage:()=> 'hr',renderFinancePage:()=> 'finance',renderExpenseClaimsPage:()=> 'expense',renderSupplyChainPage:()=> 'supply',productionKnowledgeGovernancePage:()=> 'knowledge'};
  assert.equal(vm.runInNewContext(source.slice(start,end)+'\ncurrentPage()',sandbox),expected,role+' '+route);
 }
 console.log('PASS: actual currentPage dispatch gives distinct administrator destinations and role workbenches');

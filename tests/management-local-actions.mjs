@@ -24,7 +24,7 @@ const migratedRoleOverlay = applyManagementDomainOverlay({
     { id:"U-legacy-medical", name:"旧合规", role:"医务合规审核员" }
   ]
 }, store.baseState);
-assert.deepEqual(migratedRoleOverlay.managementRoles.map((item) => item.id), ["R-ADMIN", "R-PRESALES", "R-CONTENT", "R-PUBLISHER", "R-QUALITY", "R-SUPERADMIN"], "legacy hydration must use the five-role plus superadministrator catalog");
+assert.deepEqual(migratedRoleOverlay.managementRoles.map((item) => item.id), ["R-ADMIN", "R-PRESALES", "R-CONTENT", "R-PUBLISHER", "R-QUALITY", "R-SUPPLYCHAIN", "R-FINANCE", "R-HR", "R-SUPERADMIN"], "legacy hydration must use the full fixed role catalog");
 assert.equal(migratedRoleOverlay.currentRole, "系统管理员", "legacy active roles must map to the approved administrator role");
 assert.equal(migratedRoleOverlay.managementUsers.find((item) => item.id === "U-legacy-admin")?.roleId, "R-ADMIN");
 assert.equal(migratedRoleOverlay.managementUsers.find((item) => item.id === "U-legacy-sales")?.roleId, "R-PRESALES");
@@ -92,10 +92,10 @@ assert.equal(connector.status, "待接入");
 assert.equal(connector.telemetryAvailable, false, "an unconfigured connector must not impersonate a live integration");
 assert.ok(store.state.audit.some((item) => item.object.includes(connector.id) && item.action === "新增连接器配置"), "connector creation must be audited");
 
-assert.deepEqual(store.state.managementRoles.map((item) => item.id), ["R-ADMIN", "R-PRESALES", "R-CONTENT", "R-PUBLISHER", "R-QUALITY", "R-SUPERADMIN"], "fixed roles include the explicit superadministrator");
+assert.deepEqual(store.state.managementRoles.map((item) => item.id), ["R-ADMIN", "R-PRESALES", "R-CONTENT", "R-PUBLISHER", "R-QUALITY", "R-SUPPLYCHAIN", "R-FINANCE", "R-HR", "R-SUPERADMIN"], "fixed roles include all phase-one positions and the explicit superadministrator");
 assert.equal(store.addManagementRole({ name:"测试角色", scope:"运营中心", permissions:["产品查看"] }), null, "phase one must fail closed when a legacy action tries to create a third role");
 assert.equal(store.updateManagementRole("R-ADMIN", { name:"测试角色" }), null, "fixed phase-one roles must remain read-only");
-assert.equal(store.state.managementRoles.length, 6, "role write attempts must not expand the fixed role model");
+assert.equal(store.state.managementRoles.length, 9, "role write attempts must not expand the fixed role model");
 
 const managementUser = store.addManagementUser({ name:"测试用户", account:"test-user", department:"运营中心", roleId:"R-PRESALES", role:"售前人员" });
 assert.ok(managementUser?.id, "creating a management user must return a user");
@@ -190,7 +190,8 @@ assert.match(appSource, /const persisted = await flushManagementOverlay\(\);[\s\
 assert.match(appSource, /if \(managementPersistInFlight\) \{\s*const priorSaved = await managementPersistPromise;\s*return priorSaved \? flushManagementOverlay\(\) : false;/, "保存中的旧快照完成后必须继续保存最新话术，而不能向操作人误报失败");
 assert.match(appSource, /if \(!ui\.managementDataReady \|\| ui\.managementDataLoading\) \{\s*toast\("正在读取本地服务中的话术配置，请稍候再创建"/, "服务端revision水合完成前不得创建浏览器临时话术");
 assert.match(appSource, /ui\.managementDataReady=handoverOnlyMode;/, "启动阶段必须等服务端overlay水合后才允许管理写入");
-assert.match(subpagesSource, /一期角色说明（只读）/, "role management must describe the fixed phase-one model");
+assert.match(subpagesSource, /角色说明（只读）/, "role management must describe the fixed phase-one model");
+assert.match(subpagesSource, /供应链管理员/, "role management must include the supply-chain role");
 assert.doesNotMatch(subpagesSource, /data-action="new-management-role"/, "the role page must not render a create-role action");
 assert.doesNotMatch(subpagesSource, /data-action="edit-management-role"/, "the role page must not render role edit actions");
 const declaredActions = [...new Set([...appSource.matchAll(/data-action="([A-Za-z][A-Za-z0-9-]*)"/g)].map((match) => match[1]))];

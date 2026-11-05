@@ -12,6 +12,7 @@ import { setIdentityCapabilities } from "./modules/administration/identity-capab
 import { renderHrPage } from "./modules/hr/index.js";
 import { renderFinancePage } from "./modules/finance/index.js";
 import { renderExpenseClaimsPage } from "./modules/expense-claims/index.js";
+import { renderSupplyChainPage } from "./modules/supply-chain/index.js";
 import { sanitizeDisplayData, store } from "./store.js";
 import {
   claimManagementAppointmentIntake,
@@ -344,12 +345,13 @@ const qualitySubrouteAllowlist = Object.freeze({
 });
 const isHrWorkspace = () => currentPhaseOneRole() === "人事专员";
 const isFinanceWorkspace = () => currentPhaseOneRole() === "财务专员";
-const expenseClaimRoles = new Set(["administrator", "presales", "content", "publisher", "quality", "hr", "finance", "superadministrator"]);
+const isSupplyChainWorkspace = () => currentPhaseOneRole() === "供应链管理员";
+const expenseClaimRoles = new Set(["administrator", "presales", "content", "publisher", "quality", "hr", "finance", "supplychain", "superadministrator"]);
 const canOpenRouteInCurrentRole = route => {
  const key=roleCatalogEntry(currentPhaseOneRole())?.key;
  if(key==='superadministrator')return true;
  if(route==="expense-claims")return expenseClaimRoles.has(key);
- return key==="presales"?presalesRouteAllowlist.has(route):key==="administrator"?["workbench","administration","integrations"].includes(route):key==="hr"?route==="hr":key==="finance"?route==="finance":key==="quality"?qualityRouteAllowlist.has(route):["content","publisher"].includes(key)?["workbench","knowledge"].includes(route):false;
+ return key==="presales"?presalesRouteAllowlist.has(route):key==="administrator"?["workbench","administration","integrations"].includes(route):key==="hr"?route==="hr":key==="finance"?route==="finance":key==="supplychain"?route==="supply-chain":key==="quality"?qualityRouteAllowlist.has(route):["content","publisher"].includes(key)?["workbench","knowledge"].includes(route):false;
 };
 const presalesSubrouteAllowlist = Object.freeze({
   workbench: new Set([undefined, "overview", "takeovers"]),
@@ -373,7 +375,7 @@ const routeInfo = () => {
   };
   const [route, id, resourceId] = raw.split("/").map(decodeSegment);
   if (handoverOnlyMode && route !== "workbench" && !((knowledgeGovernanceEnabled || knowledgeIntakeEnabled) && route === "knowledge")) return { route:"workbench", id:undefined, resourceId:undefined };
-  if (!handoverOnlyMode && !canOpenRouteInCurrentRole(route)) return { route:isHrWorkspace() ? "hr" : isFinanceWorkspace() ? "finance" : "conversations", id:undefined, resourceId:undefined };
+  if (!handoverOnlyMode && !canOpenRouteInCurrentRole(route)) return { route:isHrWorkspace() ? "hr" : isFinanceWorkspace() ? "finance" : isSupplyChainWorkspace() ? "supply-chain" : "conversations", id:undefined, resourceId:undefined };
   if (!handoverOnlyMode && isPresalesWorkspace() && presalesSubrouteAllowlist[route] && !presalesSubrouteAllowlist[route].has(id)) return { route:"conversations", id:undefined, resourceId:undefined };
   // 质量岗位进入会话模块时只落在 Bad Case 库，未授权二级页面一律改道。
   if (!handoverOnlyMode && isQualityWorkspace() && qualitySubrouteAllowlist[route] && !qualitySubrouteAllowlist[route].has(id)) return { route, id:"bad-cases", resourceId:undefined };
@@ -425,7 +427,7 @@ function shell(content) {
     </aside>
     <main class="main">
       <header class="topbar"><div class="breadcrumb"><span>时代之美</span>${icon("chevron", 12)}<strong>${routeTitle(route, id, resourceId)}</strong></div>
-        ${handoverOnlyMode ? `<span class="caption">仅展示已接入服务端并可审计的操作</span>` : `${route === "expense-claims" ? `<span class="caption">员工自助费用报销 · 提交后进入财务审批</span>` : isPresalesWorkspace() ? `<span class="caption">售前工作台仅展示已进入聊天或已进入接待队列的客户会话</span>` : isHrWorkspace() ? `<span class="caption">人事权限：员工档案、入职离职、简历筛选与日报周报月报</span>` : isFinanceWorkspace() ? `<span class="caption">财务权限：备用金核销、费用审批与Excel导出</span>` : `<div class="global-search">${icon("search", 17)}<input id="global-search" type="search" placeholder="搜索客户姓名、手机号、档案编号…" autocomplete="off"/><div class="search-results" id="global-results"></div></div>`}<select disabled class="role-select" id="role-select" aria-label="切换角色">${localRoles.map((role) => `<option ${role === activeRole ? "selected" : ""}>${escapeHtml(role)}</option>`).join("")}</select>`}
+        ${handoverOnlyMode ? `<span class="caption">仅展示已接入服务端并可审计的操作</span>` : `${route === "expense-claims" ? `<span class="caption">员工自助费用报销 · 提交后进入财务审批</span>` : isPresalesWorkspace() ? `<span class="caption">售前工作台仅展示已进入聊天或已进入接待队列的客户会话</span>` : isHrWorkspace() ? `<span class="caption">人事权限：员工档案、入职离职、简历筛选与日报周报月报</span>` : isFinanceWorkspace() ? `<span class="caption">财务权限：备用金核销、费用审批与Excel导出</span>` : isSupplyChainWorkspace() ? `<span class="caption">供应链权限：耗材、库存、补货建议与损耗复核</span>` : `<div class="global-search">${icon("search", 17)}<input id="global-search" type="search" placeholder="搜索客户姓名、手机号、档案编号…" autocomplete="off"/><div class="search-results" id="global-results"></div></div>`}<select disabled class="role-select" id="role-select" aria-label="切换角色">${localRoles.map((role) => `<option ${role === activeRole ? "selected" : ""}>${escapeHtml(role)}</option>`).join("")}</select>`}
         ${window.__HUAMEI_MANAGEMENT_RUNTIME__?.browser_session_auth ? `<button class="btn" data-action="admin-logout">退出登录</button>` : ""}
         <button class="topbar-action" data-action="notifications" aria-label="${hasOpenHandover ? "有新的人工接管通知" : "通知"}">${icon("bell", 17)}${hasOpenHandover ? `<span class="notification-dot"></span>` : ""}</button>
       </header>
@@ -2400,6 +2402,10 @@ function currentPage() {
     if(location.hash!=="#/finance")history.replaceState(null,"","#/finance");
     return renderFinancePage();
   }
+  if(businessRole==="supplychain"){
+    if(location.hash!=="#/supply-chain")history.replaceState(null,"","#/supply-chain");
+    return renderSupplyChainPage();
+  }
   // 质量与运营人员的岗位范围是“授权科室脱敏数据”，会话模块内只开放脱敏的
   // Bad Case 库；其余页面回到本岗位工作台（A-027 AC4）。
   if(businessRole==="quality"){
@@ -2463,6 +2469,7 @@ function currentPage() {
     analytics: analyticsPage,
     hr: renderHrPage,
     finance: renderFinancePage,
+    "supply-chain": renderSupplyChainPage,
     "expense-claims": renderExpenseClaimsPage,
     integrations: integrationsPage,
     administration: () => renderSubpage("administration", "overview")
