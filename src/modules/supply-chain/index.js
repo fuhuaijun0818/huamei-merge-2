@@ -94,7 +94,68 @@ const recommendationTable = () => {
 const anomalyTable = () => {
   const items = ui.data?.anomaly_reviews || [];
   if (!items.length) return card("耗材损耗异常复核", `<div class="supply-chain-roadmap"><span>${icon("alert",20)}</span><div><strong>暂无可复核异常</strong><p>需要至少两个已完成同术式病例及实际消耗记录；异常仅作人工复核线索。</p></div>${badge("待数据", "outline")}</div>`, { className:"supply-chain-anomalies" });
-  return card("耗材损耗异常复核", `<div class="supply-chain-warnings">${items.slice(0, 100).map((item) => `<div>${icon("alert",14)}<span><strong>${escapeHtml(item.doctor)} · ${escapeHtml(item.material_name)}</strong> · ${escapeHtml(item.procedure_name || item.procedure_code)}：实际 ${number(item.actual_quantity)} / 标准 ${number(item.expected_quantity)}，偏差 ${Math.round((item.ratio - 1) * 100)}%<small>${escapeHtml(item.note)}</small></span></div>`).join("")}</div>`, { className:"supply-chain-anomalies" });
+  const visible = items.slice(0, 24);
+  const maxDeviation = Math.round(Math.max(...items.map((item) => (Number(item.ratio) || 1) - 1)) * 100);
+  const affectedDoctors = new Set(items.map((item) => item.doctor)).size;
+  const affectedMaterials = new Set(items.map((item) => item.sku)).size;
+  const affectedCases = items.reduce((sum, item) => sum + Number(item.case_count || 0), 0);
+  const cards = visible.map((item) => {
+    const actual = Math.max(0, Number(item.actual_quantity) || 0);
+    const expected = Math.max(0, Number(item.expected_quantity) || 0);
+    const wasted = Math.max(0, Number(item.wasted_quantity) || 0);
+    const ratio = Math.max(0, Number(item.ratio) || 0);
+    const scale = Math.max(actual, expected, 1);
+    const actualWidth = Math.min(100, actual / scale * 100);
+    const expectedWidth = Math.min(100, expected / scale * 100);
+    const deviation = Math.round((ratio - 1) * 100);
+    const excess = Math.max(0, actual - expected);
+    const doctorName = String(item.doctor || "未知医生").trim();
+    const procedureName = item.procedure_name || item.procedure_code;
+    return `<article class="supply-anomaly-card" data-anomaly-review>
+      <div class="supply-anomaly-card-head">
+        <div class="supply-anomaly-person">
+          <span class="supply-anomaly-avatar">${escapeHtml(doctorName.slice(0, 1) || "医")}</span>
+          <div><strong>${escapeHtml(doctorName)}</strong><small>${escapeHtml(item.department || "未填科室")}</small></div>
+        </div>
+        <span class="supply-anomaly-delta">+${number(deviation)}%</span>
+      </div>
+      <div class="supply-anomaly-context">
+        <span>${icon("medical",13)}${escapeHtml(procedureName)}</span>
+        <span>${icon("database",13)}${escapeHtml(item.material_name)}</span>
+      </div>
+      <div class="supply-anomaly-compare" aria-label="${escapeHtml(`${doctorName}的${procedureName}：实际消耗${number(actual)}，BOM标准${number(expected)}`)}">
+        <div><span>实际</span><div class="supply-anomaly-track"><i class="actual" style="width:${actualWidth}%"></i></div><strong>${number(actual)}</strong></div>
+        <div><span>标准</span><div class="supply-anomaly-track"><i class="standard" style="width:${expectedWidth}%"></i></div><strong>${number(expected)}</strong></div>
+      </div>
+      <div class="supply-anomaly-facts">
+        <span><small>可比病例</small><strong>${number(item.case_count)}</strong></span>
+        <span><small>超出标准</small><strong>${number(excess)}</strong></span>
+        <span><small>记录报废</small><strong>${number(wasted)}</strong></span>
+      </div>
+      <div class="supply-anomaly-note">${icon("shield",14)}<span>${escapeHtml(item.note || "请人工复核本次消耗差异。")}</span></div>
+    </article>`;
+  }).join("");
+  const more = items.length > visible.length
+    ? `<div class="supply-anomaly-more">当前展示偏差最高的 ${visible.length} 项，共 ${items.length} 项待人工复核。</div>`
+    : "";
+  return card("耗材损耗异常复核", `
+    <div class="supply-anomaly-overview">
+      <div class="supply-anomaly-overview-lead">
+        <span>${icon("alert",18)}</span>
+        <div><strong>${number(items.length)} 项需要人工复核</strong><small>异常是核查线索，不自动认定浪费或形成绩效结论。</small></div>
+      </div>
+      <div class="supply-anomaly-stat"><span>最高偏差</span><strong>+${number(maxDeviation)}%</strong></div>
+      <div class="supply-anomaly-stat"><span>涉及病例</span><strong>${number(affectedCases)}</strong></div>
+      <div class="supply-anomaly-stat"><span>医生 / 耗材</span><strong>${number(affectedDoctors)} / ${number(affectedMaterials)}</strong></div>
+    </div>
+    <div class="supply-anomaly-legend">
+      <span><i class="actual"></i>实际消耗</span>
+      <span><i class="standard"></i>BOM 标准</span>
+      <small>对比条按同一病例组最大用量缩放</small>
+    </div>
+    <div class="supply-anomaly-list">${cards}</div>
+    ${more}
+  `, { subtitle:"按医生、科室、术式和耗材聚合已完成病例", className:"supply-chain-anomalies", action:badge(`${items.length}项待核查`, "warning") });
 };
 
 export function renderSupplyChainPage() {
