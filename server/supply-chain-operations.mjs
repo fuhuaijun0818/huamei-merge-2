@@ -16,7 +16,7 @@ const nowIso = () => new Date().toISOString();
 const uid = (prefix) => `${prefix}_${randomUUID()}`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const fail = (code, message, status = 400, details = []) => Object.assign(new Error(message), { code, status, details });
-const emptyTenant = () => ({ materials:[], inventoryBatches:[], imports:[], events:[], revision:0 });
+const emptyTenant = () => ({ materials:[], inventoryBatches:[], procedureBoms:[], surgeries:[], consumptions:[], inTransit:[], imports:[], events:[], revision:0 });
 const emptyState = () => ({ schemaVersion:1, tenants:{} });
 
 const readState = async () => {
@@ -55,7 +55,7 @@ const tenantState = (state, tenantId) => {
   const key = text(tenantId, 120) || "default";
   state.tenants[key] ||= emptyTenant();
   const tenant = state.tenants[key];
-  for (const field of ["materials", "inventoryBatches", "imports", "events"]) if (!Array.isArray(tenant[field])) tenant[field] = [];
+  for (const field of ["materials", "inventoryBatches", "procedureBoms", "surgeries", "consumptions", "inTransit", "imports", "events"]) if (!Array.isArray(tenant[field])) tenant[field] = [];
   return tenant;
 };
 const appendEvent = (tenant, type, actor, detail) => {
@@ -120,7 +120,24 @@ const aliases = Object.freeze({
   expiry_date:["expirydate","有效期","失效日期","到期日期"],
   available_quantity:["availablequantity","可用数量","现有库存"],
   reserved_quantity:["reservedquantity","预留数量"],
-  quarantine_quantity:["quarantinequantity","隔离数量"]
+  quarantine_quantity:["quarantinequantity","隔离数量"],
+  quantity:["quantity","数量","在途数量"],
+  procedure_code:["procedurecode","术式编码","项目编码"],
+  procedure_name:["procedurename","术式名称","项目名称"],
+  standard_quantity:["standardquantity","标准用量","单台用量"],
+  version:["version","版本"],
+  surgery_id:["surgeryid","手术编号","手术id"],
+  surgery_date:["surgerydate","手术日期","排程日期"],
+  doctor:["doctor","医生","主刀医生"],
+  department:["department","科室"],
+  status:["status","状态"],
+  complexity:["complexity","复杂度"],
+  used_quantity:["usedquantity","领用数量"],
+  returned_quantity:["returnedquantity","退回数量"],
+  wasted_quantity:["wastedquantity","报废数量"],
+  actual_consumed_quantity:["actualconsumedquantity","实际消耗数量","实际用量"],
+  po_number:["ponumber","采购单号","在途单号"],
+  expected_date:["expecteddate","预计到货日期","到货日期"]
 });
 const columnIndex = (headers) => {
   const normalized = headers.map(headerKey);
@@ -160,6 +177,7 @@ export async function getSupplyChainOverview({ tenantId } = {}) {
   return withState(async (state) => {
     const tenant = tenantState(state, tenantId);
     const currentDate = today();
+    const horizonEnd = addDays(currentDate, 30);
     const stockByMaterial = new Map();
     for (const batch of tenant.inventoryBatches) {
       const current = stockByMaterial.get(batch.sku) || { available:0, expired_available:0, reserved:0, quarantine:0, lots:0, nearest_expiry:null };
@@ -179,9 +197,101 @@ export async function getSupplyChainOverview({ tenantId } = {}) {
       ...clone(batch),
       expiry_status:batch.expiry_date < currentDate ? "expired" : batch.expiry_date <= addDays(currentDate, 90) ? "expiring" : "normal"
     }));
+    const usableStock = new Map();
+    for (const batch of tenant.inventoryBatches) {
+      if (batch.expiry_date >= currentDate) usableStock.set(batch.sku, (usableStock.get(batch.sku) || 0) + Number(batch.available_quantity || 0));
+    }
+    const latestBoms = new Map();
+    for (const bom of tenant.procedureBoms) {
+      const key = `${bom.procedure_code}|${bom.sku}`;
+      if (!latestBoms.has(key) || Number(bom.version) > Number(latestBoms.get(key).version)) latestBoms.set(key, bom);
+    }
+    const plannedSurgeries = tenant.surgeries.filter((item) => item.status === "planned" && item.surgery_date >= currentDate && item.surgery_date <= horizonEnd);
+    const demandBySku = new Map();
+    const bomWarnings = [];
+    for (const surgery of plannedSurgeries) {
+      const procedureBoms = [...latestBoms.values()].filter((bom) => bom.procedure_code === surgery.procedure_code);
+      if (!procedureBoms.length) {
+        bomWarnings.push({ surgery_id:surgery.surgery_id, procedure_code:surgery.procedure_code, message:"术式没有配置BOM，未计入需求" });
+        continue;
+      }
+      for (const bom of procedureBoms) demandBySku.set(bom.sku, (demandBySku.get(bom.sku) || 0) + Number(bom.standard_quantity || 0));
+    }
+    const incomingBySku = new Map();
+    for (const item of tenant.inTransit) {
+      if (item.expected_date >= currentDate && item.expected_date <= horizonEnd) incomingBySku.set(item.sku, (incomingBySku.get(item.sku) || 0) + Number(item.quantity || 0));
+    }
+    const materialBySku = new Map(tenant.materials.map((item) => [item.sku, item]));
+    const purchaseRecommendations = [...demandBySku.entries()].map(([sku, demand]) => {
+      const material = materialBySku.get(sku);
+      const available = usableStock.get(sku) || 0;
+      const incoming = incomingBySku.get(sku) || 0;
+      const netRequirement = Math.max(0, demand - available - incoming);
+      const moq = Math.max(1, Number(material?.moq) || 1);
+      return {
+        sku,
+        material_name:material?.name || sku,
+        demand_quantity:Math.round(demand * 1000) / 1000,
+        available_quantity:Math.round(available * 1000) / 1000,
+        incoming_quantity:Math.round(incoming * 1000) / 1000,
+        net_requirement:Math.round(netRequirement * 1000) / 1000,
+        moq,
+        recommended_quantity:netRequirement > 0 ? Math.ceil(netRequirement / moq) * moq : 0,
+        supplier:material?.supplier || null,
+        lead_time_days:Number(material?.lead_time_days) || 0
+      };
+    }).filter((item) => item.demand_quantity > 0 || item.recommended_quantity > 0);
+    const surgeryById = new Map(tenant.surgeries.map((item) => [item.surgery_id, item]));
+    const anomalyGroups = new Map();
+    for (const consumption of tenant.consumptions) {
+      const surgery = surgeryById.get(consumption.surgery_id);
+      if (!surgery || surgery.status !== "completed") continue;
+      const expected = Number(latestBoms.get(`${surgery.procedure_code}|${consumption.sku}`)?.standard_quantity);
+      if (!Number.isFinite(expected) || expected <= 0) continue;
+      const key = [surgery.doctor, surgery.department, surgery.procedure_code, consumption.sku].join("|");
+      const group = anomalyGroups.get(key) || {
+        doctor:surgery.doctor,
+        department:surgery.department,
+        procedure_code:surgery.procedure_code,
+        procedure_name:surgery.procedure_name,
+        sku:consumption.sku,
+        material_name:materialBySku.get(consumption.sku)?.name || consumption.sku,
+        surgeries:new Set(),
+        expected_quantity:0,
+        actual_quantity:0,
+        wasted_quantity:0
+      };
+      group.surgeries.add(surgery.surgery_id);
+      group.expected_quantity += expected;
+      group.actual_quantity += Number(consumption.actual_consumed_quantity || 0);
+      group.wasted_quantity += Number(consumption.wasted_quantity || 0);
+      anomalyGroups.set(key, group);
+    }
+    const anomalies = [...anomalyGroups.values()].map((group) => {
+      const { surgeries, ...summary } = group;
+      const caseCount = group.surgeries.size;
+      const ratio = group.expected_quantity > 0 ? group.actual_quantity / group.expected_quantity : 0;
+      return {
+        ...summary,
+        case_count:caseCount,
+        expected_quantity:Math.round(group.expected_quantity * 1000) / 1000,
+        actual_quantity:Math.round(group.actual_quantity * 1000) / 1000,
+        wasted_quantity:Math.round(group.wasted_quantity * 1000) / 1000,
+        ratio:Math.round(ratio * 100) / 100,
+        status:caseCount >= 2 && ratio >= 1.5 ? "review_required" : "normal",
+        note:caseCount >= 2 && ratio >= 1.5 ? "实际消耗达到BOM标准1.5倍，请核查术式复杂度、套包、退库或记录差异" : ""
+      };
+    }).filter((item) => item.status === "review_required").sort((a, b) => b.ratio - a.ratio);
     return {
       materials,
       inventory,
+      procedure_boms:clone([...latestBoms.values()]),
+      surgeries:clone(tenant.surgeries.filter((item) => item.surgery_date >= currentDate).sort((a, b) => a.surgery_date.localeCompare(b.surgery_date)).slice(0, 500)),
+      consumptions:clone(tenant.consumptions.slice(0, 2000)),
+      in_transit:clone(tenant.inTransit.slice(0, 1000)),
+      purchase_recommendations:purchaseRecommendations.sort((a, b) => b.recommended_quantity - a.recommended_quantity),
+      anomaly_reviews:anomalies,
+      bom_warnings:bomWarnings.slice(0, 100),
       imports:clone(tenant.imports.slice(0, 30)),
       events:clone(tenant.events.slice(0, 100)),
       metrics:{
@@ -190,7 +300,11 @@ export async function getSupplyChainOverview({ tenantId } = {}) {
         available_quantity:Math.round(inventory.filter((item) => item.expiry_status !== "expired").reduce((sum, item) => sum + Number(item.available_quantity || 0), 0) * 1000) / 1000,
         expired_available_quantity:Math.round(inventory.filter((item) => item.expiry_status === "expired").reduce((sum, item) => sum + Number(item.available_quantity || 0), 0) * 1000) / 1000,
         expiring_lot_count:inventory.filter((item) => item.expiry_status === "expiring").length,
-        expired_lot_count:inventory.filter((item) => item.expiry_status === "expired").length
+        expired_lot_count:inventory.filter((item) => item.expiry_status === "expired").length,
+        bom_count:[...latestBoms.values()].length,
+        planned_surgery_count:plannedSurgeries.length,
+        recommendation_count:purchaseRecommendations.filter((item) => item.recommended_quantity > 0).length,
+        anomaly_count:anomalies.length
       },
       revision:tenant.revision
     };
@@ -202,13 +316,27 @@ export async function importSupplyChainCsv({ tenantId, actor, type, payload = {}
   if (Buffer.byteLength(csv, "utf8") > MAX_CSV_BYTES) throw fail("SUPPLY_CHAIN_CSV_TOO_LARGE", "CSV文件不能超过2MB");
   const rows = parseCsv(csv);
   if (rows.length < 2) throw fail("SUPPLY_CHAIN_CSV_INVALID", "CSV至少需要表头和一行数据");
+  if (!["materials", "inventory", "bom", "surgeries", "consumption", "in-transit"].includes(type)) {
+    throw fail("SUPPLY_CHAIN_IMPORT_TYPE_INVALID", "不支持的导入类型");
+  }
   const columns = columnIndex(rows[0]);
-  if (columns.sku < 0) throw fail("SUPPLY_CHAIN_CSV_INVALID", "CSV缺少SKU列");
+  if (type !== "surgeries" && columns.sku < 0) throw fail("SUPPLY_CHAIN_CSV_INVALID", "CSV缺少SKU列");
   if (type === "materials" && (columns.name < 0 || columns.unit < 0)) throw fail("SUPPLY_CHAIN_CSV_INVALID", "耗材CSV必须包含耗材名称和单位");
   if (type === "inventory" && (columns.warehouse < 0 || columns.batch_no < 0 || columns.expiry_date < 0)) {
     throw fail("SUPPLY_CHAIN_CSV_INVALID", "库存CSV必须包含仓库、批次号和有效期");
   }
-  if (!["materials", "inventory"].includes(type)) throw fail("SUPPLY_CHAIN_IMPORT_TYPE_INVALID", "不支持的导入类型");
+  if (type === "bom" && (columns.procedure_code < 0 || columns.procedure_name < 0 || columns.standard_quantity < 0)) {
+    throw fail("SUPPLY_CHAIN_CSV_INVALID", "BOM CSV必须包含术式编码、术式名称和标准用量");
+  }
+  if (type === "surgeries" && (columns.surgery_id < 0 || columns.surgery_date < 0 || columns.procedure_code < 0 || columns.doctor < 0 || columns.department < 0)) {
+    throw fail("SUPPLY_CHAIN_CSV_INVALID", "手术排程CSV必须包含手术编号、日期、术式编码、医生和科室");
+  }
+  if (type === "consumption" && (columns.surgery_id < 0 || columns.actual_consumed_quantity < 0)) {
+    throw fail("SUPPLY_CHAIN_CSV_INVALID", "实际消耗CSV必须包含手术编号、SKU和实际消耗数量");
+  }
+  if (type === "in-transit" && (columns.po_number < 0 || columns.quantity < 0 || columns.expected_date < 0)) {
+    throw fail("SUPPLY_CHAIN_CSV_INVALID", "在途采购CSV必须包含采购单号、数量、SKU和预计到货日期");
+  }
   return withState(async (state) => {
     const tenant = tenantState(state, tenantId);
     const errors = [];
@@ -218,6 +346,25 @@ export async function importSupplyChainCsv({ tenantId, actor, type, payload = {}
       const line = index + 1;
       if (rows[index].every((value) => !String(value).trim())) continue;
       const row = rows[index];
+      if (type === "surgeries") {
+        const surgeryId = cell(row, columns, "surgery_id").toUpperCase();
+        const surgeryDate = dateOnly(cell(row, columns, "surgery_date"));
+        const procedureCode = cell(row, columns, "procedure_code").toUpperCase();
+        const procedureName = cell(row, columns, "procedure_name");
+        const doctor = cell(row, columns, "doctor");
+        const department = cell(row, columns, "department");
+        const status = cell(row, columns, "status").toLowerCase() || "planned";
+        if (!/^[A-Z0-9][A-Z0-9_.-]{1,79}$/.test(surgeryId)) errors.push({ line, field:"surgery_id", message:"手术编号格式无效" });
+        if (!surgeryDate) errors.push({ line, field:"surgery_date", message:"手术日期无效" });
+        if (!/^[A-Z0-9][A-Z0-9_.-]{1,79}$/.test(procedureCode)) errors.push({ line, field:"procedure_code", message:"术式编码格式无效" });
+        if (!doctor) errors.push({ line, field:"doctor", message:"医生不能为空" });
+        if (!department) errors.push({ line, field:"department", message:"科室不能为空" });
+        if (!["planned", "completed", "cancelled"].includes(status)) errors.push({ line, field:"status", message:"状态只能是planned、completed或cancelled" });
+        if (seen.has(surgeryId)) errors.push({ line, field:"surgery_id", message:"文件内手术编号重复" });
+        seen.add(surgeryId);
+        staged.push({ surgery_id:surgeryId, surgery_date:surgeryDate, procedure_code:procedureCode, procedure_name:procedureName, doctor, department, status, complexity:cell(row, columns, "complexity") || "standard" });
+        continue;
+      }
       const sku = cell(row, columns, "sku").toUpperCase();
       if (!/^[A-Z0-9][A-Z0-9_.-]{1,79}$/.test(sku)) {
         errors.push({ line, field:"sku", message:"SKU格式无效" });
@@ -237,7 +384,7 @@ export async function importSupplyChainCsv({ tenantId, actor, type, payload = {}
         if (seen.has(sku)) errors.push({ line, field:"sku", message:"文件内SKU重复" });
         seen.add(sku);
         staged.push({ sku, name, category:cell(row, columns, "category") || "未分类", unit, package_spec:cell(row, columns, "package_spec"), moq, supplier:cell(row, columns, "supplier"), lead_time_days:leadTime });
-      } else {
+      } else if (type === "inventory") {
         const warehouse = cell(row, columns, "warehouse");
         const batchNo = cell(row, columns, "batch_no");
         const expiryDate = dateOnly(cell(row, columns, "expiry_date"));
@@ -254,6 +401,43 @@ export async function importSupplyChainCsv({ tenantId, actor, type, payload = {}
         if (seen.has(key)) errors.push({ line, field:"batch_no", message:"文件内同一SKU/仓库/批次/有效期重复" });
         seen.add(key);
         staged.push({ sku, warehouse, location:cell(row, columns, "location"), batch_no:batchNo, sterile_batch_no:cell(row, columns, "sterile_batch_no"), expiry_date:expiryDate, available_quantity:available ?? 0, reserved_quantity:reserved ?? 0, quarantine_quantity:quarantine ?? 0 });
+      } else if (type === "bom") {
+        const procedureCode = cell(row, columns, "procedure_code").toUpperCase();
+        const procedureName = cell(row, columns, "procedure_name");
+        const standardQuantity = quantity(cell(row, columns, "standard_quantity"));
+        const version = Number(cell(row, columns, "version") || 1);
+        if (!/^[A-Z0-9][A-Z0-9_.-]{1,79}$/.test(procedureCode)) errors.push({ line, field:"procedure_code", message:"术式编码格式无效" });
+        if (!procedureName) errors.push({ line, field:"procedure_name", message:"术式名称不能为空" });
+        if (!standardQuantity || standardQuantity <= 0) errors.push({ line, field:"standard_quantity", message:"标准用量必须大于0" });
+        if (!Number.isInteger(version) || version < 1) errors.push({ line, field:"version", message:"版本必须是正整数" });
+        const key = `${procedureCode}|${sku}|${version}`;
+        if (seen.has(key)) errors.push({ line, field:"sku", message:"文件内同一术式、SKU和版本重复" });
+        seen.add(key);
+        staged.push({ procedure_code:procedureCode, procedure_name:procedureName, sku, standard_quantity:standardQuantity ?? 0, version });
+      } else if (type === "consumption") {
+        const surgeryId = cell(row, columns, "surgery_id").toUpperCase();
+        const actual = quantity(cell(row, columns, "actual_consumed_quantity"));
+        const used = quantity(cell(row, columns, "used_quantity"));
+        const returned = quantity(cell(row, columns, "returned_quantity"));
+        const wasted = quantity(cell(row, columns, "wasted_quantity"));
+        if (!surgeryId) errors.push({ line, field:"surgery_id", message:"手术编号不能为空" });
+        if (actual === null || actual <= 0) errors.push({ line, field:"actual_consumed_quantity", message:"实际消耗数量必须大于0" });
+        if ([used, returned, wasted].some((value) => value === null)) errors.push({ line, field:"quantity", message:"领用、退回和报废数量必须是非负数字" });
+        const key = `${surgeryId}|${sku}`;
+        if (seen.has(key)) errors.push({ line, field:"sku", message:"文件内同一手术和SKU重复" });
+        seen.add(key);
+        staged.push({ surgery_id:surgeryId, sku, actual_consumed_quantity:actual ?? 0, used_quantity:used ?? 0, returned_quantity:returned ?? 0, wasted_quantity:wasted ?? 0 });
+      } else {
+        const poNumber = cell(row, columns, "po_number");
+        const expectedDate = dateOnly(cell(row, columns, "expected_date"));
+        const incomingQuantity = quantity(cell(row, columns, "quantity"));
+        if (!poNumber) errors.push({ line, field:"po_number", message:"采购单号不能为空" });
+        if (!expectedDate) errors.push({ line, field:"expected_date", message:"预计到货日期无效" });
+        if (!incomingQuantity || incomingQuantity <= 0) errors.push({ line, field:"quantity", message:"在途数量必须大于0" });
+        const key = `${poNumber}|${sku}`;
+        if (seen.has(key)) errors.push({ line, field:"sku", message:"文件内同一采购单和SKU重复" });
+        seen.add(key);
+        staged.push({ po_number:poNumber, sku, quantity:incomingQuantity ?? 0, expected_date:expectedDate, supplier:cell(row, columns, "supplier") });
       }
     }
     if (errors.length) throw fail("SUPPLY_CHAIN_IMPORT_INVALID", `CSV中有${errors.length}项错误，未写入任何数据`, 400, errors.slice(0, 50));
@@ -271,7 +455,7 @@ export async function importSupplyChainCsv({ tenantId, actor, type, payload = {}
           created += 1;
         }
       }
-    } else {
+    } else if (type === "inventory") {
       const known = new Map(tenant.materials.map((item) => [item.sku, item]));
       const missing = staged.filter((item) => !known.has(item.sku));
       if (missing.length) throw fail("SUPPLY_CHAIN_MATERIAL_NOT_FOUND", "库存中存在未导入的SKU，请先导入耗材主数据", 400, missing.slice(0, 50).map((item) => ({ sku:item.sku })));
@@ -283,6 +467,62 @@ export async function importSupplyChainCsv({ tenantId, actor, type, payload = {}
           updated += 1;
         } else {
           tenant.inventoryBatches.push({ id:uid("scbatch"), material_id:material.id, ...value, created_at:timestamp, updated_at:timestamp });
+          created += 1;
+        }
+      }
+    } else if (type === "bom") {
+      const known = new Set(tenant.materials.map((item) => item.sku));
+      const missing = staged.filter((item) => !known.has(item.sku));
+      if (missing.length) throw fail("SUPPLY_CHAIN_MATERIAL_NOT_FOUND", "BOM中存在未导入的SKU，请先导入耗材主数据", 400, missing.slice(0, 50).map((item) => ({ sku:item.sku })));
+      for (const value of staged) {
+        const existing = tenant.procedureBoms.find((item) => item.procedure_code === value.procedure_code && item.sku === value.sku && item.version === value.version);
+        if (existing) {
+          Object.assign(existing, value, { updated_at:timestamp });
+          updated += 1;
+        } else {
+          tenant.procedureBoms.push({ id:uid("scbom"), ...value, created_at:timestamp, updated_at:timestamp });
+          created += 1;
+        }
+      }
+    } else if (type === "surgeries") {
+      for (const value of staged) {
+        const existing = tenant.surgeries.find((item) => item.surgery_id === value.surgery_id);
+        if (existing) {
+          Object.assign(existing, value, { updated_at:timestamp });
+          updated += 1;
+        } else {
+          tenant.surgeries.push({ id:uid("scsurgery"), ...value, created_at:timestamp, updated_at:timestamp });
+          created += 1;
+        }
+      }
+    } else if (type === "consumption") {
+      const knownSurgeries = new Set(tenant.surgeries.map((item) => item.surgery_id));
+      const knownMaterials = new Set(tenant.materials.map((item) => item.sku));
+      const missingSurgery = staged.find((item) => !knownSurgeries.has(item.surgery_id));
+      const missingMaterial = staged.find((item) => !knownMaterials.has(item.sku));
+      if (missingSurgery) throw fail("SUPPLY_CHAIN_SURGERY_NOT_FOUND", "实际消耗中的手术编号不存在，请先导入手术排程", 400, [{ surgery_id:missingSurgery.surgery_id }]);
+      if (missingMaterial) throw fail("SUPPLY_CHAIN_MATERIAL_NOT_FOUND", "实际消耗中的SKU不存在，请先导入耗材主数据", 400, [{ sku:missingMaterial.sku }]);
+      for (const value of staged) {
+        const existing = tenant.consumptions.find((item) => item.surgery_id === value.surgery_id && item.sku === value.sku);
+        if (existing) {
+          Object.assign(existing, value, { updated_at:timestamp });
+          updated += 1;
+        } else {
+          tenant.consumptions.push({ id:uid("scconsumption"), ...value, created_at:timestamp, updated_at:timestamp });
+          created += 1;
+        }
+      }
+    } else {
+      const known = new Set(tenant.materials.map((item) => item.sku));
+      const missing = staged.find((item) => !known.has(item.sku));
+      if (missing) throw fail("SUPPLY_CHAIN_MATERIAL_NOT_FOUND", "在途采购中的SKU不存在，请先导入耗材主数据", 400, [{ sku:missing.sku }]);
+      for (const value of staged) {
+        const existing = tenant.inTransit.find((item) => item.po_number === value.po_number && item.sku === value.sku);
+        if (existing) {
+          Object.assign(existing, value, { updated_at:timestamp });
+          updated += 1;
+        } else {
+          tenant.inTransit.push({ id:uid("scintransit"), ...value, created_at:timestamp, updated_at:timestamp });
           created += 1;
         }
       }

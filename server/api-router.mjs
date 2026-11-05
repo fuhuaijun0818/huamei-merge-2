@@ -787,11 +787,10 @@ export async function handleApiRequest(request, response) {
   if (url.pathname.startsWith("/api/admin/supply-chain")) {
     const method = request.method;
     const exportRoute = url.pathname === "/api/admin/supply-chain/export.csv";
-    const materialImport = url.pathname === "/api/admin/supply-chain/imports/materials";
-    const inventoryImport = url.pathname === "/api/admin/supply-chain/imports/inventory";
+    const importMatch = url.pathname.match(/^\/api\/admin\/supply-chain\/imports\/(materials|inventory|bom|surgeries|consumption|in-transit)$/i);
     const supported = (method === "GET" && url.pathname === "/api/admin/supply-chain")
       || (method === "GET" && exportRoute)
-      || (method === "POST" && (materialImport || inventoryImport));
+      || (method === "POST" && importMatch);
     if (!supported) {
       sendError(request, response, requestId, 404, "API_NOT_FOUND", "未找到指定供应链管理端点");
       return true;
@@ -809,7 +808,7 @@ export async function handleApiRequest(request, response) {
         principal,
         requestId,
         request,
-        action:`management.supply_chain.${materialImport ? "materials_import" : inventoryImport ? "inventory_import" : exportRoute ? "export" : "read"}`,
+        action:`management.supply_chain.${importMatch ? `${importMatch[1]}_import` : exportRoute ? "export" : "read"}`,
         resourceType:"supply_chain",
         resourceId:principal.tenantId
       });
@@ -848,7 +847,7 @@ export async function handleApiRequest(request, response) {
       const data = await importSupplyChainCsv({
         tenantId:principal.tenantId,
         actor:principal.subject,
-        type:materialImport ? "materials" : "inventory",
+        type:importMatch[1].toLowerCase(),
         payload
       });
       sendJson(request, response, requestId, 201, { data, request_id:requestId });

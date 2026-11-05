@@ -1,26 +1,30 @@
 {
   "role": "A",
   "task_id": "supplychain-account-001",
-  "summary": "新增“供应链管理员”固定岗位和本机专用账号supplychain.specialist。账号拥有独立供应链工作台、供应链读取/维护/导出能力和员工费用申请入口，不具备客户、会话、知识发布、财务审批、账号管理或系统配置权限。首个MVP已实现耗材主数据CSV导入、批次库存与效期CSV导入、库存汇总、临期/过期预警和CSV导出；BOM、手术排程、实际消耗、补货建议和损耗分析仍待后续数据接入。",
+  "summary": "新增“供应链管理员”固定岗位和本机专用账号supplychain.specialist。账号拥有独立供应链工作台、供应链读取/维护/导出能力和员工费用申请入口，不具备客户、会话、知识发布、财务审批、账号管理或系统配置权限。供应链MVP已实现耗材主数据、批次库存与效期、术式BOM版本、手术排程、实际消耗和在途采购CSV导入，并按未来30天已排手术计算计划需求，结合未过期可用库存、预计在途和MOQ生成人工确认的补货建议；已完成病例可按医生、科室、术式和SKU复核实际消耗相对BOM标准的异常线索。",
   "acceptance_steps": [
     "使用supplychain.specialist登录；预期默认进入#/supply-chain，侧边栏仅显示“费用申请”和“供应链管理”。",
     "检查身份能力；预期仅包含supplychain:read、supplychain:manage和supplychain:export。",
     "访问财务、人事、全局账号和知识发布接口；预期均返回403。",
     "直接访问客户页面；预期被退回供应链管理工作台。",
-    "打开供应链管理页，下载耗材CSV模板并导入2个SKU；预期显示SKU数量和耗材主数据。",
-    "下载库存CSV模板并导入批次、库位、数量、有效期；预期显示可用库存、预留、隔离、最近有效期，并正确标记正常、90天内到期和已过期批次。",
-    "导入包含未知SKU或格式错误的库存CSV；预期整批拒绝，不产生部分写入。"
+    "打开供应链管理页，按“耗材主数据→批次库存→术式BOM→手术排程→实际消耗/在途采购”顺序下载模板并导入测试CSV；预期每一步均回读新增或更新条数。",
+    "库存导入包含未来有效期和已过期批次；预期可用库存排除过期批次，页面分别标记正常、90天内到期和已过期。",
+    "导入同一术式同一SKU的多个BOM版本；预期概览只使用最新版本，排程缺BOM时显示“术式没有配置BOM，未计入需求”。",
+    "导入未来30天内排期；预期计划需求=手术台数×最新BOM标准用量。导入预计到货日在未来30天内的在途数量后，净需求=max(0,计划需求-未过期可用库存-未来预计在途)，建议采购按MOQ向上取整。",
+    "导入已过期库存和预计到货日已过去的在途单；预期两者均不能抵减未来需求，建议补货SKU只统计建议采购量大于0的项目。",
+    "导入同一个医生、科室、术式、SKU的至少两个已完成病例及实际消耗；实际消耗达到BOM标准1.5倍时进入“耗材损耗异常复核”，页面同时提示核查复杂度、套包、退库或记录差异，不自动认定浪费。",
+    "导入包含未知手术编号或未知SKU的实际消耗CSV；预期整批拒绝，不产生部分写入。"
   ],
   "tests": [
     {
       "command": "Chrome CDP supplychain.specialist 真实登录",
       "status": "pass",
-      "evidence": "供应链账号登录后默认进入#/supply-chain；可见导航仅“费用申请”和“供应链管理”；供应链与费用申请接口200，财务、人事、全局账号和知识发布接口403；通过页面成功导入2个耗材SKU和2个批次，页面显示可用库存100、已过期可用库存20、90天临期1项；直接访问客户页面被退回供应链管理工作台。"
+      "evidence": "供应链账号登录后默认进入#/supply-chain；可见导航仅“费用申请”和“供应链管理”；供应链与费用申请接口200，财务、人事、全局账号和知识发布接口403。浏览器依次导入3个SKU、3个批次、2条BOM、5台手术、2条在途和2条实际消耗；补货用例计划需求12、可用5、在途2、净需求5、MOQ12、建议采购12；两名同术式病例实际6/标准4触发待复核；缺BOM手术显示告警；直接访问客户页面被退回供应链管理工作台。"
     },
     {
       "command": "node tests/supply-chain-operations.mjs",
       "status": "pass",
-      "evidence": "耗材CSV支持中文表头、BOM、引号与逗号；库存导入汇总可用数量、预留、隔离和最近效期；临期/过期状态正确；未知SKU库存导入整批失败且没有部分写入；耗材更新保留库存关联；耗材与库存CSV导出通过。"
+      "evidence": "六类CSV均通过服务测试；BOM仅使用最新版本；未来手术按标准用量形成计划需求；过期库存和逾期在途不计入可用供应；MOQ向上取整示例为18需求-5库存-2在途=11净需求，建议12；至少两个可比病例达到1.5倍时进入复核；未知手术或未知SKU的实际消耗整批失败且没有部分写入；耗材与库存CSV导出通过。"
     },
     {
       "command": "node tests/phase-one-role-policy.mjs",
@@ -43,9 +47,14 @@
       "evidence": "Mock契约60项通过，两个模拟租户均包含供应链管理员账号并可登录。"
     },
     {
+      "command": "npm run team:test:http",
+      "status": "pass",
+      "evidence": "隔离的真实Node应用HTTP契约37项通过；该结果不代替浏览器或PostgreSQL验收。"
+    },
+    {
       "command": "node --env-file=.env.local tests/postgres-five-role-http-integration.mjs",
       "status": "pass",
-      "evidence": "真实PostgreSQL账号矩阵覆盖新增供应链岗位；供应链、财务和HR权限边界不扩大，员工费用申请仍可用。"
+      "evidence": "八个真实Basic账号通过；供应链岗位隔离、HR建号、员工费用申请送财务审批、仅财务审批和即时停权均通过。"
     },
     {
       "command": "node --env-file=.env.local --input-type=module -e \"process.env.HUAMEI_DATABASE_URL=process.env.HUAMEI_MIGRATION_DATABASE_URL; await import('./scripts/run-migrations.mjs');\"",
@@ -72,17 +81,17 @@
     {
       "path": "server/supply-chain-operations.mjs",
       "owner": "shared",
-      "change": "新增耗材主数据、批次库存、CSV导入校验、效期状态、汇总与CSV导出服务"
+      "change": "新增耗材、库存、BOM、手术排程、实际消耗、在途采购导入，补货建议、损耗复核和CSV导出服务"
     },
     {
       "path": "src/modules/supply-chain/",
       "owner": "shared",
-      "change": "新增耗材和库存CSV导入、模板下载、数据表、效期预警及导出页面"
+      "change": "新增六类CSV导入与模板、BOM和手术排程表、30天补货建议、异常复核、效期预警及导出页面"
     },
     {
       "path": "server/api-router.mjs",
       "owner": "shared",
-      "change": "新增供应链总览、耗材/库存CSV导入和CSV导出接口；分别要求supplychain:read/manage/export"
+      "change": "新增供应链总览、六类CSV导入和CSV导出接口；分别要求supplychain:read/manage/export"
     },
     {
       "path": "server/platform/phase-one-role-policy.mjs",
@@ -162,7 +171,7 @@
     {
       "path": "tests/supply-chain-operations.mjs",
       "owner": "shared",
-      "change": "新增耗材/库存CSV导入、效期、原子失败和导出回归"
+      "change": "新增六类CSV、BOM版本、需求预测、MOQ补货、异常复核、原子失败和导出回归"
     },
     {
       "path": "tests/onboarding/mock-contract.mjs",
@@ -173,7 +182,7 @@
   "api_changes": [
     {
       "interface": "GET /api/admin/supply-chain",
-      "change": "读取耗材、库存批次、导入记录和有效期汇总；要求supplychain:read",
+      "change": "读取耗材、库存批次、最新BOM、未来手术、实际消耗、在途、补货建议、异常复核和汇总指标；要求supplychain:read",
       "breaking": false
     },
     {
@@ -184,6 +193,26 @@
     {
       "interface": "POST /api/admin/supply-chain/imports/inventory",
       "change": "导入或更新批次库存CSV；SKU必须已存在，全部行有效才写入；要求supplychain:manage",
+      "breaking": false
+    },
+    {
+      "interface": "POST /api/admin/supply-chain/imports/bom",
+      "change": "导入或更新术式BOM版本CSV；SKU必须已存在，同术式同SKU同版本唯一；要求supplychain:manage",
+      "breaking": false
+    },
+    {
+      "interface": "POST /api/admin/supply-chain/imports/surgeries",
+      "change": "导入或更新手术排程CSV；状态限定planned/completed/cancelled；要求supplychain:manage",
+      "breaking": false
+    },
+    {
+      "interface": "POST /api/admin/supply-chain/imports/consumption",
+      "change": "导入或更新实际消耗CSV；手术编号和SKU必须已存在，全部行有效才写入；要求supplychain:manage",
+      "breaking": false
+    },
+    {
+      "interface": "POST /api/admin/supply-chain/imports/in-transit",
+      "change": "导入或更新在途采购CSV；SKU必须已存在，只有预计到货日在未来30天内的数量参与补货计算；要求supplychain:manage",
       "breaking": false
     },
     {
@@ -205,10 +234,12 @@
   ],
   "known_limitations": [
     "当前创建的是通用供应链服务账号，真实姓名显示为“供应链管理员”；如指定具体员工，应通过账号编辑改为其真实姓名。",
-    "当前MVP已实现耗材主数据、批次库存、效期预警和CSV导入导出；仍使用本地JSON，不是生产数据库。",
-    "尚未实现术式BOM、手术排程、实际消耗、净需求计算、MOQ补货建议、在途采购和损耗异常分析。",
+    "当前MVP仍使用本地JSON，不是生产数据库；多租户并发、备份恢复和正式数据库迁移需后续接入。",
+    "需求预测窗口固定为未来30天，安全库存暂按0；不会自动生成采购订单，补货数量必须由供应链人员复核。",
+    "BOM当前按数字最大版本读取，尚无生效日期和手术执行时点版本快照；历史病例发生BOM变更后可能需人工复核。",
+    "损耗异常规则为首版启发式：同一医生、科室、术式、SKU至少两个已完成病例且实际消耗达到标准用量1.5倍才提示；结果仅作核查线索，不构成浪费、处罚或绩效结论。",
     "本机账号密码仅保存在被Git忽略的.team-dev/supplychain-account.private.json，不进入代码库。",
-    "后续真实供应链功能需要先接入耗材、批次库存、在途、MOQ、手术排程、术式BOM和实际消耗数据。"
+    "真实上线前仍需由院方确认术式BOM维护责任、实际消耗口径、退库/报废规则、采购交期和安全库存策略。"
   ],
   "rollback": "回退供应链角色目录、能力常量、供应链服务/前端、CSV导入导出、导航和账号路由接入，并回退021迁移；不删除HUAMEI_SUPPLY_CHAIN_STORE_FILE中的既有数据。"
 }
