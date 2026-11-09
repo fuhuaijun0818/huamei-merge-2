@@ -8,6 +8,7 @@ const ui = {
   error:"",
   tab:"overview",
   reportAccount:"",
+  selectedResumeJobId:"",
   data:null
 };
 
@@ -203,15 +204,29 @@ const reportsPage = () => {
 
 const resumePage = () => {
   const screenings = ui.data?.resumeScreenings || [];
-  const profile = ui.data?.resumeJobProfile;
-  const header = `<div class="hr-owner-strip"><span>简历筛选助手</span><small>固定岗位配置一次，之后每次只需上传附件；评分不自动淘汰，也不将年龄、性别、婚育、民族或照片作为评分项。</small></div>`;
-  if (!profile) {
-    return `${header}<section class="card hr-resume-profile-empty"><div><span>固定岗位尚未配置</span><h3>先设置岗位名称和JD，只需一次</h3><p>配置完成后，每次选择简历附件即可自动评分，不再重复填写岗位信息。</p></div><button class="btn primary" data-action="hr-configure-resume-job">${icon("settings",15)}配置固定岗位</button></section>`;
-  }
-  const job = `<section class="card hr-resume-job"><div class="hr-resume-job-copy"><div class="row wrap">${badge("当前固定岗位", "success")}${badge(`配置版本 v${profile.version}`, "outline")}</div><h3>${escapeHtml(profile.job_title)}</h3><p>${escapeHtml(profile.job_description)}</p><small>最后更新 ${formatDate(profile.updated_at)} · ${escapeHtml(profile.updated_by || "system")}；后续附件均按此岗位评分。</small></div><button class="btn" data-action="hr-configure-resume-job">${icon("edit",15)}修改岗位与JD</button></section>`;
-  const upload = `<form id="hr-quick-resume-form" class="card hr-resume-upload"><div><span>上传简历附件</span><h3>选择文件后直接评分</h3><p>支持 PDF、DOCX、TXT、Markdown，最大 5MB。候选人标识自动使用文件名，无需重复填写。</p></div><label class="hr-resume-file-picker"><input class="form-control" name="resume_file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required /><span>附件只在内存中解析，不保存原文件；扫描版PDF暂不支持OCR。</span></label><button class="btn primary" type="submit">${icon("plus",15)}上传并评分</button></form>`;
-  if (!screenings.length) return `${header}${job}${upload}<section class="card">${empty("还没有简历筛选记录", "选择一个简历附件后，系统会按上方固定岗位直接给出匹配关键词、待核实项和建议复核分。")}</section>`;
-  return `${header}${job}${upload}<div class="hr-resume-grid">${screenings.map((item) => `<article class="card hr-resume-card">
+  const profiles = ui.data?.resumeJobProfiles || [];
+  const activeProfiles = profiles.filter((item) => item.status === "active");
+  const selected = activeProfiles.find((item) => item.id === ui.selectedResumeJobId) || activeProfiles[0] || null;
+  if (selected) ui.selectedResumeJobId = selected.id;
+  const header = `<div class="hr-owner-strip"><span>简历筛选助手</span><small>可维护多个招聘岗位，每个岗位分别保存JD和配置版本；评分不自动淘汰，也不将年龄、性别、婚育、民族或照片作为评分项。</small></div>`;
+  const library = `<section class="card hr-resume-job-library">
+    <div class="hr-resume-job-library-head"><div><span>招聘岗位库</span><h3>${profiles.length ? `${profiles.length} 个岗位，${activeProfiles.length} 个用于评分` : "尚未添加招聘岗位"}</h3><p>选择岗位后，上传区只需选择简历附件。停用岗位不会删除历史评分记录。</p></div><button class="btn primary" data-action="hr-new-resume-job">${icon("plus",15)}新增招聘岗位</button></div>
+    ${profiles.length ? `<div class="hr-resume-job-list">${profiles.map((profile) => {
+      const current = selected?.id === profile.id;
+      const active = profile.status === "active";
+      return `<article class="hr-resume-job-card ${current ? "selected" : ""} ${active ? "" : "inactive"}" data-resume-job-id="${escapeHtml(profile.id)}">
+        <div class="hr-resume-job-card-head"><div class="row wrap">${current ? badge("当前评分岗位", "success") : badge(active ? "可评分" : "已停用", active ? "outline" : "danger")}${badge(`v${profile.version}`, "outline")}</div><span>${escapeHtml(profile.department || "未指定部门")}</span></div>
+        <h4>${escapeHtml(profile.job_title)}</h4>
+        <p>${escapeHtml(profile.job_description)}</p>
+        <div class="hr-resume-job-card-foot"><small>更新于 ${formatDate(profile.updated_at)} · ${escapeHtml(profile.updated_by || "system")}</small><div>${active ? `<button class="btn small ${current ? "" : "primary"}" data-action="hr-select-resume-job" data-id="${escapeHtml(profile.id)}" ${current ? "disabled" : ""}>${current ? icon("check",13) + "正在使用" : "用于评分"}</button>` : ""}<button class="btn small" data-action="hr-edit-resume-job" data-id="${escapeHtml(profile.id)}">${icon("edit",13)}编辑</button></div></div>
+      </article>`;
+    }).join("")}</div>` : `<div class="hr-resume-profile-empty"><div><span>招聘岗位库为空</span><h3>先手动添加一个招聘岗位</h3><p>岗位JD保存后，选择该岗位即可连续上传简历附件评分。</p></div><button class="btn primary" data-action="hr-new-resume-job">${icon("plus",15)}添加第一个岗位</button></div>`}
+  </section>`;
+  const upload = selected
+    ? `<form id="hr-quick-resume-form" class="card hr-resume-upload"><input type="hidden" name="job_profile_id" value="${escapeHtml(selected.id)}" /><div><span>当前评分岗位 · v${selected.version}</span><h3>${escapeHtml(selected.job_title)}</h3><p>${escapeHtml(selected.department || "未指定部门")}；支持 PDF、DOCX、TXT、Markdown，最大 5MB，候选人标识自动使用文件名。</p></div><label class="hr-resume-file-picker"><input class="form-control" name="resume_file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required /><span>附件只在内存中解析，不保存原文件；扫描版PDF暂不支持OCR。</span></label><button class="btn primary" type="submit">${icon("plus",15)}上传并评分</button></form>`
+    : `<section class="card">${empty(profiles.length ? "当前没有启用岗位" : "尚未添加招聘岗位", profiles.length ? "编辑任一岗位并切换为启用，或新增一个招聘岗位后再上传简历。" : "新增岗位并填写JD后，才能对简历进行评分。")}</section>`;
+  if (!screenings.length) return `${header}${library}${upload}<section class="card">${empty("还没有简历筛选记录", "选择岗位并上传简历附件后，系统会显示匹配关键词、待核实项和建议复核分。")}</section>`;
+  return `${header}${library}${upload}<div class="hr-resume-grid">${screenings.map((item) => `<article class="card hr-resume-card">
     <header><div><span>${escapeHtml(item.job_title)}</span><h3>${escapeHtml(item.candidate_label)}</h3></div><strong>${item.score}<small>/100</small></strong></header>
     ${badge(item.verdict, item.score >= 80 ? "success" : item.score >= 60 ? "warning" : "outline")}
     <div class="hr-resume-terms"><div><span class="hr-resume-term-label">匹配项</span>${item.matched_terms.length ? item.matched_terms.map((term) => badge(term, "success")).join("") : "<em>暂无</em>"}</div><div><span class="hr-resume-term-label">待核实</span>${item.missing_terms.length ? item.missing_terms.map((term) => badge(term, "outline")).join("") : "<em>无</em>"}</div></div>
@@ -297,18 +312,26 @@ const showCompleteTaskModal = (workflowId, taskId) => {
   });
 };
 
-const showResumeJobProfileModal = () => {
-  const profile = ui.data?.resumeJobProfile;
+const showResumeJobProfileModal = (jobId = "") => {
+  const profiles = ui.data?.resumeJobProfiles || [];
+  const profile = jobId ? profiles.find((item) => item.id === jobId) : null;
+  if (jobId && !profile) {
+    toast("未找到该招聘岗位，请刷新后重试", "warning");
+    return;
+  }
   openModal({
-    title:profile ? "修改固定岗位" : "配置固定岗位",
-    desc:"岗位名称和JD只需配置一次。之后每次上传简历附件，系统会自动按此岗位评分。",
+    title:profile ? "编辑招聘岗位" : "新增招聘岗位",
+    desc:"每个岗位独立保存JD、部门和配置版本。启用后可在简历筛选助手中选择用于评分。",
     wide:true,
     body:`<form id="hr-resume-profile-form" class="form-grid">
-      ${formField("固定岗位名称","job_title",profile?.job_title || "",{required:true})}
-      ${formField("固定岗位JD","job_description",profile?.job_description || "",{type:"textarea",full:true,required:true})}
-      <div class="form-group full"><div class="guardrail">${icon("shield",14)}修改岗位后，仅影响之后上传的简历评分；历史筛选记录仍保留原岗位和原评分。</div></div>
+      ${profile ? `<input type="hidden" name="job_profile_id" value="${escapeHtml(profile.id)}" />` : ""}
+      ${formField("招聘岗位名称","job_title",profile?.job_title || "",{required:true})}
+      ${formField("所属部门","department",profile?.department === "未指定部门" ? "" : profile?.department || "")}
+      ${formField("岗位状态","status",profile?.status || "active",{type:"select",items:[{value:"active",label:"启用，可用于简历评分"},{value:"inactive",label:"停用，保留历史记录"}]})}
+      ${formField("岗位JD","job_description",profile?.job_description || "",{type:"textarea",full:true,required:true})}
+      <div class="form-group full"><div class="guardrail">${icon("shield",14)}修改岗位后，仅影响之后上传的简历评分；历史筛选记录仍保留当时的岗位名称、JD版本和评分。</div></div>
     </form>`,
-    footer:`<button class="btn" data-action="modal-close">取消</button><button class="btn primary" data-action="hr-submit-form" data-id="hr-resume-profile-form">保存固定岗位</button>`
+    footer:`<button class="btn" data-action="modal-close">取消</button><button class="btn primary" data-action="hr-submit-form" data-id="hr-resume-profile-form">${profile ? "保存岗位修改" : "添加招聘岗位"}</button>`
   });
 };
 
@@ -423,7 +446,15 @@ const handleHrAction = async (action, id, target) => {
   }
   if (action === "hr-new-onboarding") return showOnboardingModal();
   if (action === "hr-new-offboarding") return showOffboardingModal();
-  if (action === "hr-configure-resume-job") return showResumeJobProfileModal();
+  if (action === "hr-new-resume-job") return showResumeJobProfileModal();
+  if (action === "hr-edit-resume-job") return showResumeJobProfileModal(id);
+  if (action === "hr-configure-resume-job") return showResumeJobProfileModal(id);
+  if (action === "hr-select-resume-job") {
+    ui.selectedResumeJobId = id;
+    refreshHrContent();
+    toast("已切换简历评分岗位", "success");
+    return;
+  }
   if (action === "hr-new-managed-account") return showHrManagedAccountModal();
   if (action === "hr-edit-managed-account") return showHrManagedAccountModal(id);
   if (action === "hr-complete-task") return showCompleteTaskModal(id, target.dataset.taskId || "");
@@ -523,19 +554,23 @@ document.addEventListener("submit", async (event) => {
       refreshHrContent();
       toast("离职流程已创建，交接任务已生成", "success");
     } else if (form.id === "hr-resume-profile-form") {
-      await request("/api/admin/hr/resume-job-profile", {
+      const saved = await request("/api/admin/hr/resume-job-profiles", {
         method:"POST",
         headers:{ "Idempotency-Key":key("hr-resume-job") },
         body:JSON.stringify({
           job_title:data.job_title,
-          job_description:data.job_description
+          department:data.department,
+          job_description:data.job_description,
+          status:data.status,
+          ...(data.job_profile_id ? { job_profile_id:data.job_profile_id } : { create_new:true })
         })
       });
       closeModal();
       await hydrateHr({ force:true });
+      ui.selectedResumeJobId = saved.status === "active" ? saved.id : "";
       ui.tab = "resume";
       refreshHrContent();
-      toast("固定岗位已保存，之后只需上传简历附件", "success");
+      toast(saved.status === "active" ? `${saved.job_title} 已启用，可用于简历评分` : `${saved.job_title} 已停用，历史评分记录仍保留`, "success");
     } else if (form.id === "hr-quick-resume-form") {
       const file = data.resume_file instanceof File && data.resume_file.size ? data.resume_file : null;
       if (!file) throw new Error("请选择简历附件");
@@ -552,13 +587,15 @@ document.addEventListener("submit", async (event) => {
         body:JSON.stringify({
           file_name:file.name,
           mime_type:file.type,
-          data_base64:dataBase64
+          data_base64:dataBase64,
+          job_profile_id:data.job_profile_id
         })
       });
       await hydrateHr({ force:true });
+      ui.selectedResumeJobId = saved.job_profile_id || ui.selectedResumeJobId;
       ui.tab = "resume";
       refreshHrContent();
-      toast(`${saved.candidate_label} 已完成评分，请结合固定岗位要求人工复核`, "success");
+      toast(`${saved.candidate_label} 已按“${saved.job_title}”完成评分，请人工复核`, "success");
     } else if (form.id === "hr-managed-account-form") {
       const payload = {
         display_name:String(data.display_name || "").trim(),

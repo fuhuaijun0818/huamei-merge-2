@@ -30,6 +30,7 @@ const emptyTenant = () => ({
   workflows: [],
   reports: [],
   resumeScreenings: [],
+  resumeJobProfiles: [],
   resumeJobProfile: null,
   workLogs: [],
   reportSchedule: {
@@ -86,12 +87,36 @@ const tenantState = (state, tenantId) => {
   const key = text(tenantId, 120) || "default";
   state.tenants[key] ||= emptyTenant();
   const tenant = state.tenants[key];
-  for (const field of ["employees", "workflows", "reports", "resumeScreenings", "workLogs", "events"]) {
+  for (const field of ["employees", "workflows", "reports", "resumeScreenings", "resumeJobProfiles", "workLogs", "events"]) {
     if (!Array.isArray(tenant[field])) tenant[field] = [];
   }
   if (!tenant.resumeJobProfile || typeof tenant.resumeJobProfile !== "object" || Array.isArray(tenant.resumeJobProfile)) {
     tenant.resumeJobProfile = null;
   }
+  if (tenant.resumeJobProfile && !tenant.resumeJobProfiles.some((item) => item?.id === tenant.resumeJobProfile.id)) {
+    tenant.resumeJobProfiles.push({ ...tenant.resumeJobProfile });
+  }
+  const profileTimestamp = nowIso();
+  tenant.resumeJobProfiles = tenant.resumeJobProfiles
+    .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+    .map((item) => ({
+      id:text(item.id, 80) || uid("hrjob"),
+      job_title:text(item.job_title, 120),
+      job_description:text(item.job_description, 20_000),
+      department:text(item.department, 80) || "未指定部门",
+      status:item.status === "inactive" ? "inactive" : "active",
+      version:Math.max(1, Number(item.version) || 1),
+      created_by:text(item.created_by || item.updated_by, 120) || "system",
+      created_at:item.created_at || item.updated_at || profileTimestamp,
+      updated_by:text(item.updated_by || item.created_by, 120) || "system",
+      updated_at:item.updated_at || item.created_at || profileTimestamp
+    }))
+    .filter((item) => item.job_title && item.job_description)
+    .slice(0, 100);
+  tenant.resumeJobProfile = tenant.resumeJobProfiles.find((item) => item.id === tenant.resumeJobProfile?.id)
+    || tenant.resumeJobProfiles.find((item) => item.status === "active")
+    || tenant.resumeJobProfiles[0]
+    || null;
   tenant.reportSchedule ||= { enabled:true, timezone:"Asia/Shanghai", last_run_at:null, last_error:"" };
   const usedAccounts = new Set();
   for (const employee of tenant.employees) {
@@ -411,37 +436,76 @@ export async function saveResumeJobProfile({ tenantId, actor, payload = {} } = {
     const tenant = reconcileTenant(tenantState(state, tenantId));
     const jobTitle = text(payload.job_title, 120);
     const jobDescription = text(payload.job_description, 20_000);
+    const department = text(payload.department, 80) || "未指定部门";
+    const requestedId = text(payload.job_profile_id, 80);
+    const createNew = payload.create_new === true;
+    const requestedStatus = payload.status === "inactive" ? "inactive" : "active";
     if (jobTitle.length < 2) {
-      throw Object.assign(new Error("固定岗位名称不能少于2个字符"), { code:"HR_RESUME_JOB_TITLE_REQUIRED", status:400 });
+      throw Object.assign(new Error("招聘岗位名称不能少于2个字符"), { code:"HR_RESUME_JOB_TITLE_REQUIRED", status:400 });
     }
     if (jobDescription.length < 20) {
-      throw Object.assign(new Error("固定岗位JD不能少于20个字符"), { code:"HR_RESUME_JOB_DESCRIPTION_REQUIRED", status:400 });
+      throw Object.assign(new Error("招聘岗位JD不能少于20个字符"), { code:"HR_RESUME_JOB_DESCRIPTION_REQUIRED", status:400 });
     }
-    const previous = tenant.resumeJobProfile;
-    tenant.resumeJobProfile = {
+    const previous = requestedId
+      ? tenant.resumeJobProfiles.find((item) => item.id === requestedId)
+      : createNew || !tenant.resumeJobProfiles.length
+        ? null
+        : tenant.resumeJobProfile || tenant.resumeJobProfiles[0];
+    if (requestedId && !previous) {
+      throw Object.assign(new Error("未找到对应招聘岗位"), { code:"HR_RESUME_JOB_PROFILE_NOT_FOUND", status:404 });
+    }
+    const timestamp = nowIso();
+    const profile = {
       id:previous?.id || uid("hrjob"),
       job_title:jobTitle,
       job_description:jobDescription,
+      department,
+      status:requestedStatus,
       version:Math.max(0, Number(previous?.version) || 0) + 1,
+      created_by:previous?.created_by || text(actor, 120) || "system",
+      created_at:previous?.created_at || timestamp,
       updated_by:text(actor, 120) || "system",
-      updated_at:nowIso()
+      updated_at:timestamp
     };
+    let savedProfile = previous;
+    if (previous) Object.assign(previous, profile);
+    else {
+      tenant.resumeJobProfiles.unshift(profile);
+      savedProfile = profile;
+    }
+    tenant.resumeJobProfiles = tenant.resumeJobProfiles.slice(0, 100);
+    tenant.resumeJobProfile = savedProfile.status === "active"
+      ? savedProfile
+      : tenant.resumeJobProfiles.find((item) => item.status === "active") || null;
     appendEvent(tenant, {
-      type:"resume.job_profile_updated",
+      type:previous ? "resume.job_profile_updated" : "resume.job_profile_created",
       actor,
-      detail:`固定简历岗位：${jobTitle} · v${tenant.resumeJobProfile.version}`
+      detail:`招聘岗位：${jobTitle} · v${savedProfile.version} · ${savedProfile.status === "active" ? "启用" : "停用"}`
     });
     tenant.revision += 1;
-    return clone(tenant.resumeJobProfile);
+    return clone(savedProfile);
   });
 }
 
 export async function screenResume({ tenantId, actor, payload = {} } = {}) {
   return withState(async (state) => {
     const tenant = reconcileTenant(tenantState(state, tenantId));
-    const fixedJob = payload.use_fixed_job_profile === true ? tenant.resumeJobProfile : null;
+    const requestedJobId = text(payload.job_profile_id, 80);
+    const fixedJob = requestedJobId
+      ? tenant.resumeJobProfiles.find((item) => item.id === requestedJobId)
+      : payload.use_fixed_job_profile === true
+        ? tenant.resumeJobProfile?.status === "active"
+          ? tenant.resumeJobProfile
+          : tenant.resumeJobProfiles.find((item) => item.status === "active")
+        : null;
+    if (requestedJobId && !fixedJob) {
+      throw Object.assign(new Error("所选招聘岗位不存在，请刷新后重试"), { code:"HR_RESUME_JOB_PROFILE_NOT_FOUND", status:404 });
+    }
+    if (requestedJobId && fixedJob.status !== "active") {
+      throw Object.assign(new Error("所选招聘岗位已停用，不能继续用于简历评分"), { code:"HR_RESUME_JOB_PROFILE_INACTIVE", status:409 });
+    }
     if (payload.use_fixed_job_profile === true && !fixedJob) {
-      throw Object.assign(new Error("请先配置固定岗位和岗位JD"), { code:"HR_RESUME_JOB_PROFILE_REQUIRED", status:409 });
+      throw Object.assign(new Error("请先新增并启用招聘岗位及岗位JD"), { code:"HR_RESUME_JOB_PROFILE_REQUIRED", status:409 });
     }
     const jd = fixedJob ? fixedJob.job_description : text(payload.job_description, 20_000);
     const resume = text(payload.resume_text, 50_000);
@@ -467,6 +531,7 @@ export async function screenResume({ tenantId, actor, payload = {} } = {}) {
       job_title:fixedJob?.job_title || text(payload.job_title, 120) || "未命名岗位",
       job_profile_id:fixedJob?.id || null,
       job_profile_version:fixedJob?.version || null,
+      job_department:fixedJob?.department || null,
       source_type:payload.source_type === "file" ? "file" : "text",
       source_filename:text(payload.source_filename, 160) || null,
       source_mime:text(payload.source_mime, 120) || null,

@@ -134,6 +134,44 @@ assert.equal(Object.hasOwn(resumeScreening, "owner"), false);
 assert.doesNotMatch(JSON.stringify(resumeScreening), /李江龙/);
 assert.doesNotMatch(JSON.stringify(resumeScreening), /本人有5年人事运营经验/);
 
+const firstResumeJob = await hr.saveResumeJobProfile({
+  tenantId,
+  actor,
+  payload:{
+    create_new:true,
+    job_title:"人事运营专员",
+    department:"人力资源部",
+    job_description:"岗位职责：负责招聘、员工关系、绩效和Excel数据分析，要求3年以上相关经验。任职要求：沟通能力强。"
+  }
+});
+const secondResumeJob = await hr.saveResumeJobProfile({
+  tenantId,
+  actor,
+  payload:{
+    create_new:true,
+    job_title:"招聘数据分析专员",
+    department:"人力资源部",
+    job_description:"岗位职责：使用Python、SQL完成招聘数据分析，要求5年以上经验并具备沟通能力。"
+  }
+});
+assert.notEqual(firstResumeJob.id, secondResumeJob.id);
+const selectedJobScreening = await hr.screenResume({
+  tenantId,
+  actor,
+  payload:{
+    use_fixed_job_profile:true,
+    job_profile_id:secondResumeJob.id,
+    candidate_label:"候选人-测试-002",
+    resume_text:"本人有6年Python和SQL数据分析经验，负责招聘数据分析与跨部门沟通，能够完成数据报表。"
+  }
+});
+assert.equal(selectedJobScreening.job_profile_id, secondResumeJob.id);
+assert.equal(selectedJobScreening.job_title, "招聘数据分析专员");
+assert.equal(selectedJobScreening.job_profile_version, 1);
+const multiJobOverview = await hr.getHrOverview({ tenantId, actor });
+assert.equal(multiJobOverview.resumeJobProfiles.length, 2);
+assert.deepEqual(new Set(multiJobOverview.resumeJobProfiles.map((item) => item.job_title)), new Set(["人事运营专员", "招聘数据分析专员"]));
+
 const workLog = await hr.createHrWorkLog({
   tenantId,
   actor,
@@ -182,11 +220,15 @@ assert.match(apiSource, /\/api\/admin\/hr\/offboarding/);
 assert.match(apiSource, /\/api\/admin\/hr\/resume-screenings/);
 assert.match(apiSource, /\/api\/admin\/hr\/resume-screenings\/file/);
 assert.match(apiSource, /\/api\/admin\/hr\/resume-job-profile/);
+assert.match(apiSource, /\/api\/admin\/hr\/resume-job-profiles/);
 assert.match(apiSource, /\/api\/admin\/hr\/work-logs/);
 assert.match(apiSource, /reports\/generate/);
 assert.match(hrUiSource, /简历筛选助手/);
 assert.match(hrUiSource, /type="file"/);
-assert.match(hrUiSource, /固定岗位名称/);
+assert.match(hrUiSource, /招聘岗位库/);
+assert.match(hrUiSource, /招聘岗位名称/);
+assert.match(hrUiSource, /hr-new-resume-job/);
+assert.match(hrUiSource, /hr-select-resume-job/);
 assert.match(hrUiSource, /hr-quick-resume-form/);
 assert.doesNotMatch(hrUiSource, /李江龙/);
 assert.match(hrUiSource, /报告生成助手 · 负责人：孟夕然/);
@@ -196,6 +238,7 @@ assert.match(hrUiSource, /class="hr-resume-term-label"/);
 assert.doesNotMatch(hrCssSource, /\.hr-resume-terms > div > span\s*\{/);
 assert.match(hrCssSource, /\.hr-resume-terms \.badge\s*\{[^}]*width:auto/);
 assert.match(hrCssSource, /\.hr-resume-terms \.badge\s*\{[^}]*overflow-wrap:anywhere/);
+assert.match(hrCssSource, /\.hr-resume-job-list\s*\{[^}]*grid-template-columns/);
 assert.equal(feishuReports.getFeishuReportStatus({}).configured, false);
 let sentPayload = null;
 const delivered = await feishuReports.deliverFeishuReport({

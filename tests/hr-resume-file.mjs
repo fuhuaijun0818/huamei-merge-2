@@ -106,6 +106,54 @@ const overview = await hr.getHrOverview({ tenantId:"tenant-hr-resume-file", acto
 assert.equal(overview.resumeJobProfile.job_title, "数据分析专员");
 assert.equal(overview.resumeScreenings[0].job_title, "数据分析专员");
 
+const secondProfile = await hr.saveResumeJobProfile({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  payload:{
+    create_new:true,
+    job_title:"人力运营负责人",
+    department:"人力资源部",
+    job_description:"岗位职责：负责招聘运营、员工关系和绩效项目，要求4年以上经验并具备跨部门沟通能力。"
+  }
+});
+assert.notEqual(secondProfile.id, profile.id);
+assert.equal(secondProfile.version, 1);
+assert.equal(secondProfile.status, "active");
+const secondScreening = await hr.screenResumeAttachment({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  payload:{ ...uploadPayload, job_profile_id:secondProfile.id }
+});
+assert.equal(secondScreening.job_profile_id, secondProfile.id);
+assert.equal(secondScreening.job_title, "人力运营负责人");
+assert.equal(secondScreening.job_department, "人力资源部");
+assert.equal(secondScreening.job_profile_version, 1);
+const multiJobOverview = await hr.getHrOverview({ tenantId:"tenant-hr-resume-file", actor:"hr-resume-test" });
+assert.equal(multiJobOverview.resumeJobProfiles.length, 2);
+assert.equal(multiJobOverview.resumeJobProfiles.filter((item) => item.status === "active").length, 2);
+
+const inactiveProfile = await hr.saveResumeJobProfile({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  payload:{
+    job_profile_id:secondProfile.id,
+    job_title:"人力运营负责人",
+    department:"人力资源部",
+    status:"inactive",
+    job_description:"岗位职责：负责招聘运营、员工关系和绩效项目，要求4年以上经验并具备跨部门沟通能力。"
+  }
+});
+assert.equal(inactiveProfile.status, "inactive");
+assert.equal(inactiveProfile.version, 2);
+await assertCode(hr.screenResumeAttachment({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  payload:{ ...uploadPayload, job_profile_id:secondProfile.id }
+}), "HR_RESUME_JOB_PROFILE_INACTIVE");
+const afterInactive = await hr.getHrOverview({ tenantId:"tenant-hr-resume-file", actor:"hr-resume-test" });
+assert.equal(afterInactive.resumeJobProfiles.length, 2);
+assert.equal(afterInactive.resumeJobProfile.id, profile.id, "停用当前岗位后应回退到仍启用的岗位");
+
 await assertCode(extractResumeAttachment({
   file_name:"resume.exe",
   mime_type:"application/octet-stream",
