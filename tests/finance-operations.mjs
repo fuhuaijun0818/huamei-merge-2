@@ -193,6 +193,30 @@ assert.equal(overview.requests.length, 3);
 assert.equal(overview.requests.filter((item) => item.approval_status === "approved").length, 2);
 assert.ok(overview.events.some((item) => item.type === "finance.export.completed"));
 const employeePrincipal = { subject:"staff_expense_employee_001", account:"employee.expense.001", displayName:"费用申请员工" };
+const employeeEvidence = [{
+  file_name:"员工凭据.png",
+  mime_type:"image/png",
+  data_base64:receiptPng.toString("base64")
+}];
+const employeeClaimPayload = {
+  company:"时代之美测试公司",
+  expense_type:"员工报销",
+  amount:268.5,
+  description:"员工账号提交的费用报销",
+  evidence_files:employeeEvidence
+};
+await assert.rejects(
+  finance.submitEmployeeExpenseClaim({ tenantId, principal:employeePrincipal, payload:{ ...employeeClaimPayload, company:"" } }),
+  (error) => error.code === "FINANCE_REQUEST_INVALID"
+);
+await assert.rejects(
+  finance.submitEmployeeExpenseClaim({ tenantId, principal:employeePrincipal, payload:{ ...employeeClaimPayload, expense_type:"" } }),
+  (error) => error.code === "FINANCE_REQUEST_INVALID"
+);
+await assert.rejects(
+  finance.submitEmployeeExpenseClaim({ tenantId, principal:employeePrincipal, payload:{ ...employeeClaimPayload, amount:0 } }),
+  (error) => error.code === "FINANCE_AMOUNT_INVALID"
+);
 await assert.rejects(
   finance.submitEmployeeExpenseClaim({
     tenantId,
@@ -210,25 +234,14 @@ await assert.rejects(
 const employeeClaim = await finance.submitEmployeeExpenseClaim({
   tenantId,
   principal:employeePrincipal,
-  payload:{
-    type:"payment",
-    company:"时代之美测试公司",
-    expense_type:"员工报销",
-    project_name:"员工自助项目",
-    amount:268.5,
-    description:"员工账号提交的费用报销",
-    evidence_files:[{
-      file_name:"员工凭据.png",
-      mime_type:"image/png",
-      data_base64:receiptPng.toString("base64")
-    }]
-  }
+  payload:{ ...employeeClaimPayload, type:"payment" }
 });
 assert.equal(employeeClaim.type, "expense");
 assert.equal(employeeClaim.applicant, "费用申请员工");
 assert.equal(employeeClaim.employee_account, "employee.expense.001");
 assert.equal(employeeClaim.applicant_subject, employeePrincipal.subject);
 assert.equal(employeeClaim.source, "employee_self_service");
+assert.equal(employeeClaim.project_name, "", "费用报销的项目名称应为选填");
 const mine = await finance.listMyExpenseClaims({ tenantId, subject:employeePrincipal.subject });
 assert.equal(mine.length, 1);
 assert.equal(mine[0].id, employeeClaim.id);
@@ -254,6 +267,12 @@ assert.match(financeServiceSource, /FINANCE_EVIDENCE_REQUIRED/);
 assert.match(expenseClaimUiSource, /\/api\/admin\/expense-claims/);
 assert.match(expenseClaimUiSource, /费用报销必须上传至少一张凭据截图/);
 assert.match(expenseClaimUiSource, /ui\.identity\?\.display_name/);
+assert.match(expenseClaimUiSource, /requiredLabel\("所属公司"\)/);
+assert.match(expenseClaimUiSource, /requiredLabel\("费用类型"\)/);
+assert.match(expenseClaimUiSource, /requiredLabel\("费用金额（元）"\)/);
+assert.match(expenseClaimUiSource, /项目名称（选填）/);
+assert.doesNotMatch(expenseClaimUiSource, /formField\("项目名称","project_name","",\{required:true\}\)/);
+assert.match(financeServiceSource, /type !== "expense" && !record\.project_name/);
 
 console.log("finance-operations: passed");
 rmSync(evidenceRoot, { recursive:true, force:true });

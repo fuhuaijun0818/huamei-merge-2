@@ -5,6 +5,7 @@
 .expense-claim-owner strong { display:block; color:#59402c; font-size:12px; }
 .expense-claim-owner span { display:block; margin-top:3px; color:#947b63; font-size:10px; }
 .expense-claims-page .danger-text { color:#a4463d; }
+.expense-required-mark { margin-left:4px; color:#b33643; font-weight:700; }
 
 @media (max-width: 640px) {
   .expense-claim-owner { align-items:flex-start; }

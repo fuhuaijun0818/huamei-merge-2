@@ -266,8 +266,11 @@ export async function createFinanceRequest({ tenantId, actor, payload = {} } = {
       created_at:nowIso(),
       updated_at:nowIso()
     };
-    if (!record.company || !record.expense_type || !record.project_name || !record.applicant) {
-      throw Object.assign(new Error("请填写所属公司、费用类型、项目名称和申请人"), { code:"FINANCE_REQUEST_INVALID", status:400 });
+    if (!record.company || !record.expense_type || !record.applicant) {
+      throw Object.assign(new Error("请填写所属公司、费用类型和申请人，费用金额必须大于0"), { code:"FINANCE_REQUEST_INVALID", status:400 });
+    }
+    if (type !== "expense" && !record.project_name) {
+      throw Object.assign(new Error("付款申请和采购申请必须填写项目名称"), { code:"FINANCE_PROJECT_NAME_REQUIRED", status:400 });
     }
     try {
       await storeEvidence(tenantId, evidenceFiles);

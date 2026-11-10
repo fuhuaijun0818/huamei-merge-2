@@ -10,6 +10,7 @@ const fileBase64 = (file) => new Promise((resolve, reject) => {
   reader.addEventListener("error", () => reject(new Error("凭据图片读取失败")));
   reader.readAsDataURL(file);
 });
+const requiredLabel = (label) => `${label}<span class="expense-required-mark" aria-hidden="true">*</span>`;
 
 async function request(path, options = {}) {
   let response;
@@ -101,11 +102,11 @@ const showClaimModal = () => {
     body:`<form id="expense-claim-form" class="form-grid">
       <div class="form-group"><span class="form-label">申请人真实姓名</span><input class="form-control" value="${escapeHtml(ui.identity?.display_name || ui.identity?.displayName || "真实姓名未配置")}" disabled /></div>
       <div class="form-group"><span class="form-label">登录账号</span><input class="form-control" value="${escapeHtml(ui.identity?.account || ui.identity?.subject || "")}" disabled /></div>
-      ${formField("所属公司","company","",{required:true})}
-      ${formField("费用类型","expense_type","",{required:true})}
-      ${formField("项目名称","project_name","",{required:true})}
+      ${formField(requiredLabel("所属公司"),"company","",{required:true})}
+      ${formField(requiredLabel("费用类型"),"expense_type","",{required:true})}
+      ${formField("项目名称（选填）","project_name","")}
       ${formField("成本中心","cost_center","")}
-      <label class="form-group"><span class="form-label">费用金额（元）</span><input class="form-control" name="amount" type="number" min="0.01" step="0.01" required /></label>
+      <label class="form-group"><span class="form-label">${requiredLabel("费用金额（元）")}</span><input class="form-control" name="amount" type="number" min="0.01" step="0.01" required /></label>
       ${formField("发票 / 凭据号","invoice_reference","")}
       <label class="form-group full"><span class="form-label">凭据截图（必传，最多3张，每张5MB）</span><input class="form-control" name="evidence_files" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple required /><span class="caption">支持JPG、PNG、WebP；服务端会校验图片签名后私有保存。</span></label>
       ${formField("报销说明","description","",{type:"textarea",full:true})}
@@ -116,6 +117,12 @@ const showClaimModal = () => {
 
 const submitClaim = async (form) => {
   const data = Object.fromEntries(new FormData(form));
+  const company = String(data.company || "").trim();
+  const expenseType = String(data.expense_type || "").trim();
+  const amount = Number(data.amount);
+  if (!company) throw new Error("请填写所属公司");
+  if (!expenseType) throw new Error("请填写费用类型");
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("请填写大于0的费用金额");
   const files = [...(form.querySelector('[name="evidence_files"]')?.files || [])];
   if (!files.length) throw new Error("费用报销必须上传至少一张凭据截图");
   if (files.length > 3) throw new Error("每笔费用申请最多上传3张凭据截图");
@@ -129,8 +136,8 @@ const submitClaim = async (form) => {
     method:"POST",
     headers:{ "Idempotency-Key":key("expense-claim") },
     body:JSON.stringify({
-      company:data.company,
-      expense_type:data.expense_type,
+      company,
+      expense_type:expenseType,
       project_name:data.project_name,
       amount:data.amount,
       cost_center:data.cost_center,
