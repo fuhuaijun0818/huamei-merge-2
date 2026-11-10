@@ -75,6 +75,7 @@ import {
   getHrOverview,
   screenResume,
   screenResumeAttachment,
+  screenResumeAttachmentForJobs,
   saveResumeJobProfile,
   startHrReportScheduler
 } from "./hr-operations.mjs";
@@ -971,11 +972,13 @@ export async function handleApiRequest(request, response) {
     const taskMatch = url.pathname.match(/^\/api\/admin\/hr\/workflows\/(hr(?:onb|off)_[a-f0-9-]+)\/tasks\/(hrtask_[a-f0-9-]+)\/complete$/i);
     const accountRoute = url.pathname === "/api/admin/hr/accounts";
     const resumeFileRoute = url.pathname === "/api/admin/hr/resume-screenings/file";
+    const resumeFileBatchRoute = url.pathname === "/api/admin/hr/resume-screenings/file-batch";
     const resumeJobProfileRoute = url.pathname === "/api/admin/hr/resume-job-profile";
     const resumeJobProfilesRoute = url.pathname === "/api/admin/hr/resume-job-profiles";
     const supported = (method === "GET" && url.pathname === "/api/admin/hr")
       || (["GET", "POST"].includes(method) && accountRoute)
       || (method === "POST" && resumeFileRoute)
+      || (method === "POST" && resumeFileBatchRoute)
       || (method === "POST" && resumeJobProfileRoute)
       || (method === "POST" && resumeJobProfilesRoute)
       || (method === "POST" && url.pathname === "/api/admin/hr/onboarding")
@@ -1030,7 +1033,7 @@ export async function handleApiRequest(request, response) {
     }
     let payload;
     try {
-      payload = await readJsonBody(request, resumeFileRoute ? HR_RESUME_FILE_MAX_JSON_BYTES : MAX_BODY_BYTES);
+      payload = await readJsonBody(request, (resumeFileRoute || resumeFileBatchRoute) ? HR_RESUME_FILE_MAX_JSON_BYTES : MAX_BODY_BYTES);
     } catch (error) {
       sendError(request, response, requestId, error.code === "BODY_TOO_LARGE" ? 413 : 400, error.code || "INVALID_JSON", "请求体不是有效JSON");
       return true;
@@ -1047,6 +1050,8 @@ export async function handleApiRequest(request, response) {
           : await createManagedAccountForHr(payload, principal);
       } else if (resumeFileRoute) {
         data = await screenResumeAttachment({ tenantId:principal.tenantId, actor:principal.subject, payload });
+      } else if (resumeFileBatchRoute) {
+        data = await screenResumeAttachmentForJobs({ tenantId:principal.tenantId, actor:principal.subject, payload });
       } else if (resumeJobProfileRoute || resumeJobProfilesRoute) {
         data = await saveResumeJobProfile({
           tenantId:principal.tenantId,

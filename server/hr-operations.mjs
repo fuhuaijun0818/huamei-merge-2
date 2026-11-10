@@ -487,6 +487,46 @@ export async function saveResumeJobProfile({ tenantId, actor, payload = {} } = {
   });
 }
 
+const scoreResumeAgainstJob = ({ job = null, jd, resume, candidateLabel, payload = {}, actor = "system", timestamp = nowIso(), batchId = null }) => {
+  const terms = extractResumeTerms(jd);
+  const normalizedResume = normalizedResumeText(resume);
+  const matched = terms.filter((term) => normalizedResume.includes(term.toLowerCase())).slice(0, 20);
+  const missing = terms.filter((term) => !normalizedResume.includes(term.toLowerCase())).slice(0, 20);
+  const requiredYears = Number((jd.match(/(\d+)\s*年(?:以上)?(?:相关)?经验/u) || [])[1] || 0);
+  const resumeYears = Math.max(0, ...(resume.match(/(\d+)\s*年/gu) || []).map((item) => Number(item.replace(/\D/g, "")) || 0));
+  const coverage = terms.length ? matched.length / terms.length : 0.5;
+  const experienceFit = requiredYears ? Math.min(1, resumeYears / requiredYears) : 0.7;
+  const score = Math.max(0, Math.min(100, Math.round(35 + coverage * 55 + experienceFit * 10)));
+  const verdict = score >= 80 ? "高匹配" : score >= 60 ? "可进入人工复核" : "匹配度较低";
+  return {
+    id:uid("hrresume"),
+    batch_id:batchId,
+    candidate_label:candidateLabel,
+    job_title:job?.job_title || text(payload.job_title, 120) || "未命名岗位",
+    job_profile_id:job?.id || null,
+    job_profile_version:job?.version || null,
+    job_department:job?.department || null,
+    source_type:payload.source_type === "file" ? "file" : "text",
+    source_filename:text(payload.source_filename, 160) || null,
+    source_mime:text(payload.source_mime, 120) || null,
+    source_size:Number.isInteger(payload.source_size) && payload.source_size > 0 ? payload.source_size : null,
+    source_sha256:/^[a-f0-9]{64}$/i.test(String(payload.source_sha256 || "")) ? String(payload.source_sha256).toLowerCase() : null,
+    parser:text(payload.parser, 40) || null,
+    extracted_chars:Number.isInteger(payload.extracted_chars) && payload.extracted_chars > 0 ? payload.extracted_chars : null,
+    score,
+    verdict,
+    matched_terms:matched,
+    missing_terms:missing,
+    required_years:requiredYears || null,
+    resume_years:resumeYears || null,
+    resume_sha256:createHash("sha256").update(resume).digest("hex"),
+    created_by:text(actor, 120) || "system",
+    created_at:timestamp,
+    note:HR_RESUME_NOTE,
+    auto_reject:false
+  };
+};
+
 export async function screenResume({ tenantId, actor, payload = {} } = {}) {
   return withState(async (state) => {
     const tenant = reconcileTenant(tenantState(state, tenantId));
@@ -515,48 +555,14 @@ export async function screenResume({ tenantId, actor, payload = {} } = {}) {
     if (jd.length < 20 || resume.length < 20) {
       throw Object.assign(new Error("岗位要求和简历文本均不能少于20个字符"), { code:"HR_RESUME_INPUT_TOO_SHORT", status:400 });
     }
-    const terms = extractResumeTerms(jd);
-    const normalizedResume = normalizedResumeText(resume);
-    const matched = terms.filter((term) => normalizedResume.includes(term.toLowerCase())).slice(0, 20);
-    const missing = terms.filter((term) => !normalizedResume.includes(term.toLowerCase())).slice(0, 20);
-    const requiredYears = Number((jd.match(/(\d+)\s*年(?:以上)?(?:相关)?经验/u) || [])[1] || 0);
-    const resumeYears = Math.max(0, ...(resume.match(/(\d+)\s*年/gu) || []).map((item) => Number(item.replace(/\D/g, "")) || 0));
-    const coverage = terms.length ? matched.length / terms.length : 0.5;
-    const experienceFit = requiredYears ? Math.min(1, resumeYears / requiredYears) : 0.7;
-    const score = Math.max(0, Math.min(100, Math.round(35 + coverage * 55 + experienceFit * 10)));
-    const verdict = score >= 80 ? "高匹配" : score >= 60 ? "可进入人工复核" : "匹配度较低";
-    const screening = {
-      id:uid("hrresume"),
-      candidate_label:candidateLabel,
-      job_title:fixedJob?.job_title || text(payload.job_title, 120) || "未命名岗位",
-      job_profile_id:fixedJob?.id || null,
-      job_profile_version:fixedJob?.version || null,
-      job_department:fixedJob?.department || null,
-      source_type:payload.source_type === "file" ? "file" : "text",
-      source_filename:text(payload.source_filename, 160) || null,
-      source_mime:text(payload.source_mime, 120) || null,
-      source_size:Number.isInteger(payload.source_size) && payload.source_size > 0 ? payload.source_size : null,
-      source_sha256:/^[a-f0-9]{64}$/i.test(String(payload.source_sha256 || "")) ? String(payload.source_sha256).toLowerCase() : null,
-      parser:text(payload.parser, 40) || null,
-      extracted_chars:Number.isInteger(payload.extracted_chars) && payload.extracted_chars > 0 ? payload.extracted_chars : null,
-      score,
-      verdict,
-      matched_terms:matched,
-      missing_terms:missing,
-      required_years:requiredYears || null,
-      resume_years:resumeYears || null,
-      resume_sha256:createHash("sha256").update(resume).digest("hex"),
-      created_by:text(actor, 120) || "system",
-      created_at:nowIso(),
-      note:HR_RESUME_NOTE,
-      auto_reject:false
-    };
+    const timestamp = nowIso();
+    const screening = scoreResumeAgainstJob({ job:fixedJob, jd, resume, candidateLabel, payload, actor, timestamp });
     tenant.resumeScreenings.unshift(screening);
     tenant.resumeScreenings = tenant.resumeScreenings.slice(0, 1000);
     appendEvent(tenant, {
       type:"resume.screened",
       actor,
-      detail:`简历筛选：${candidateLabel} · ${score}分 · ${verdict}`
+      detail:`简历筛选：${candidateLabel} · ${screening.job_title} · ${screening.score}分 · ${screening.verdict}`
     });
     tenant.revision += 1;
     return clone(screening);
@@ -581,6 +587,78 @@ export async function screenResumeAttachment({ tenantId, actor, payload = {} } =
       parser:extracted.parser,
       extracted_chars:extracted.extracted_chars
     }
+  });
+}
+
+export async function screenResumeAttachmentForJobs({ tenantId, actor, payload = {} } = {}) {
+  const jobProfileIds = [...new Set(
+    (Array.isArray(payload.job_profile_ids) ? payload.job_profile_ids : [])
+      .map((item) => text(item, 80))
+      .filter(Boolean)
+  )];
+  if (!jobProfileIds.length) {
+    throw Object.assign(new Error("请至少选择一个启用招聘岗位"), { code:"HR_RESUME_JOB_SELECTION_REQUIRED", status:400 });
+  }
+  if (jobProfileIds.length > 20) {
+    throw Object.assign(new Error("单次最多同时选择20个招聘岗位"), { code:"HR_RESUME_JOB_SELECTION_TOO_LARGE", status:400 });
+  }
+  const extracted = await extractResumeAttachment(payload);
+  return withState(async (state) => {
+    const tenant = reconcileTenant(tenantState(state, tenantId));
+    const jobs = jobProfileIds.map((id) => tenant.resumeJobProfiles.find((item) => item.id === id));
+    const missingIndex = jobs.findIndex((item) => !item);
+    if (missingIndex >= 0) {
+      throw Object.assign(new Error("所选招聘岗位不存在，请刷新后重试"), { code:"HR_RESUME_JOB_PROFILE_NOT_FOUND", status:404, details:[{ job_profile_id:jobProfileIds[missingIndex] }] });
+    }
+    const inactive = jobs.find((item) => item.status !== "active");
+    if (inactive) {
+      throw Object.assign(new Error(`招聘岗位“${inactive.job_title}”已停用，不能继续用于简历评分`), { code:"HR_RESUME_JOB_PROFILE_INACTIVE", status:409, details:[{ job_profile_id:inactive.id }] });
+    }
+    const resume = text(extracted.text, 50_000);
+    if (resume.length < 20) {
+      throw Object.assign(new Error("简历文本不能少于20个字符"), { code:"HR_RESUME_INPUT_TOO_SHORT", status:400 });
+    }
+    const candidateLabel = text(payload.candidate_label, 80)
+      || text(extracted.file_name.replace(/\.[^.]+$/, ""), 80)
+      || "未命名候选人";
+    const timestamp = nowIso();
+    const batchId = uid("hrresume_batch");
+    const sourcePayload = {
+      ...payload,
+      source_type:"file",
+      source_filename:extracted.file_name,
+      source_mime:extracted.mime_type,
+      source_size:extracted.file_size,
+      source_sha256:extracted.file_sha256,
+      parser:extracted.parser,
+      extracted_chars:extracted.extracted_chars
+    };
+    const screenings = jobs.map((job) => scoreResumeAgainstJob({
+      job,
+      jd:job.job_description,
+      resume,
+      candidateLabel,
+      payload:sourcePayload,
+      actor,
+      timestamp,
+      batchId
+    }));
+    tenant.resumeScreenings.unshift(...screenings);
+    tenant.resumeScreenings = tenant.resumeScreenings.slice(0, 1000);
+    appendEvent(tenant, {
+      type:"resume.batch_screened",
+      actor,
+      detail:`简历批量筛选：${candidateLabel} · ${screenings.length}个岗位 · ${extracted.file_name}`
+    });
+    tenant.revision += 1;
+    return clone({
+      batch_id:batchId,
+      candidate_label:candidateLabel,
+      job_count:screenings.length,
+      source_filename:extracted.file_name,
+      source_parser:extracted.parser,
+      screenings
+    });
   });
 }
 

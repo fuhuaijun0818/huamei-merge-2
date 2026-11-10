@@ -131,6 +131,22 @@ assert.equal(secondScreening.job_profile_version, 1);
 const multiJobOverview = await hr.getHrOverview({ tenantId:"tenant-hr-resume-file", actor:"hr-resume-test" });
 assert.equal(multiJobOverview.resumeJobProfiles.length, 2);
 assert.equal(multiJobOverview.resumeJobProfiles.filter((item) => item.status === "active").length, 2);
+const batchScreening = await hr.screenResumeAttachmentForJobs({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  payload:{ ...uploadPayload, job_profile_ids:[profile.id, secondProfile.id] }
+});
+assert.equal(batchScreening.job_count, 2);
+assert.equal(batchScreening.screenings.length, 2);
+assert.deepEqual(new Set(batchScreening.screenings.map((item) => item.job_profile_id)), new Set([profile.id, secondProfile.id]));
+assert.equal(new Set(batchScreening.screenings.map((item) => item.batch_id)).size, 1);
+assert.equal(new Set(batchScreening.screenings.map((item) => item.resume_sha256)).size, 1);
+assert.ok(batchScreening.screenings.every((item) => item.source_filename === "candidate.pdf" && !Object.hasOwn(item, "resume_text")));
+await assertCode(hr.screenResumeAttachmentForJobs({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  payload:{ ...uploadPayload, job_profile_ids:[] }
+}), "HR_RESUME_JOB_SELECTION_REQUIRED");
 
 const inactiveProfile = await hr.saveResumeJobProfile({
   tenantId:"tenant-hr-resume-file",
@@ -149,6 +165,11 @@ await assertCode(hr.screenResumeAttachment({
   tenantId:"tenant-hr-resume-file",
   actor:"hr-resume-test",
   payload:{ ...uploadPayload, job_profile_id:secondProfile.id }
+}), "HR_RESUME_JOB_PROFILE_INACTIVE");
+await assertCode(hr.screenResumeAttachmentForJobs({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  payload:{ ...uploadPayload, job_profile_ids:[profile.id, secondProfile.id] }
 }), "HR_RESUME_JOB_PROFILE_INACTIVE");
 const afterInactive = await hr.getHrOverview({ tenantId:"tenant-hr-resume-file", actor:"hr-resume-test" });
 assert.equal(afterInactive.resumeJobProfiles.length, 2);
