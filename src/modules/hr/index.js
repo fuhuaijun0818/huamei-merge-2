@@ -210,13 +210,14 @@ const resumePage = () => {
   const activeIds = activeProfiles.map((item) => item.id);
   const selectionKey = activeIds.join("|");
   if (ui.resumeJobSelectionKey !== selectionKey) {
-    ui.selectedResumeJobIds = activeIds.slice(0, 20);
+    const preserved = ui.selectedResumeJobIds.filter((id) => activeIds.includes(id));
+    ui.selectedResumeJobIds = preserved.length ? preserved : activeIds.length === 1 ? activeIds : [];
     ui.resumeJobSelectionKey = selectionKey;
   } else {
     ui.selectedResumeJobIds = ui.selectedResumeJobIds.filter((id) => activeIds.includes(id));
   }
   const selectedIds = new Set(ui.selectedResumeJobIds);
-  const header = `<div class="hr-owner-strip"><span>简历筛选助手</span><small>可同时选择多个招聘岗位，一份简历一次解析并按多个岗位分别评分；每个岗位保留独立JD、版本和评分结果。</small></div>`;
+  const header = `<div class="hr-owner-strip"><span>简历筛选助手</span><small>按简历实际投递岗位选择评分，通常只选一个；只有同一份简历确实投递多个岗位时才需要多选。</small></div>`;
   const library = `<section class="card hr-resume-job-library">
     <div class="hr-resume-job-library-head"><div><span>招聘岗位库</span><h3>${profiles.length ? `${profiles.length} 个岗位，${activeProfiles.length} 个可参与评分` : "尚未添加招聘岗位"}</h3><p>上传区可同时勾选多个启用岗位；停用岗位不会删除历史评分记录。</p></div><button class="btn primary" data-action="hr-new-resume-job">${icon("plus",15)}新增招聘岗位</button></div>
     ${profiles.length ? `<div class="hr-resume-job-list">${profiles.map((profile) => {
@@ -231,7 +232,7 @@ const resumePage = () => {
   </section>`;
   const jobCheckboxes = activeProfiles.map((profile) => `<label class="hr-resume-job-check"><input type="checkbox" name="job_profile_ids" value="${escapeHtml(profile.id)}" ${selectedIds.has(profile.id) ? "checked" : ""} /><span><strong>${escapeHtml(profile.job_title)}</strong><small>${escapeHtml(profile.department || "未指定部门")} · v${profile.version}</small></span></label>`).join("");
   const upload = activeProfiles.length
-    ? `<form id="hr-quick-resume-form" class="card hr-resume-upload"><div class="hr-resume-job-batch"><div class="hr-resume-job-batch-head"><span>本次同时评分岗位</span><p>可多选，最多20个；附件只解析一次，每个岗位分别生成评分和匹配依据。</p></div><div class="hr-resume-job-checks">${jobCheckboxes}</div></div><label class="hr-resume-file-picker"><input class="form-control" name="resume_file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required /><span>支持 PDF、DOCX、TXT、Markdown，最大 5MB；附件只在内存中解析，不保存原文件。扫描版PDF暂不支持OCR。</span></label><button class="btn primary" type="submit">${icon("plus",15)}同时按 <span data-role="resume-job-count">${selectedIds.size}</span> 个岗位评分</button></form>`
+    ? `<form id="hr-quick-resume-form" class="card hr-resume-upload"><div class="hr-resume-job-batch"><div class="hr-resume-job-batch-head"><span>本次评分岗位（按实际投递岗位选择）</span><p>默认不勾选；通常只选1个岗位，同一简历投递多个岗位时才多选，最多20个。</p></div><div class="hr-resume-job-checks">${jobCheckboxes}</div></div><label class="hr-resume-file-picker"><input class="form-control" name="resume_file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required /><span>支持 PDF、DOCX、TXT、Markdown，最大 5MB；附件只在内存中解析，不保存原文件。扫描版PDF暂不支持OCR。</span></label><button class="btn primary" type="submit" ${selectedIds.size ? "" : "disabled"}>${icon("plus",15)}按 <span data-role="resume-job-count">${selectedIds.size}</span> 个投递岗位评分</button></form>`
     : `<section class="card">${empty(profiles.length ? "当前没有启用岗位" : "尚未添加招聘岗位", profiles.length ? "编辑任一岗位并切换为启用，或新增一个招聘岗位后再上传简历。" : "新增岗位并填写JD后，才能对简历进行评分。")}</section>`;
   if (!screenings.length) return `${header}${library}${upload}<section class="card">${empty("还没有简历筛选记录", "选择岗位并上传简历附件后，系统会显示匹配关键词、待核实项和建议复核分。")}</section>`;
   return `${header}${library}${upload}<div class="hr-resume-grid">${screenings.map((item) => `<article class="card hr-resume-card">
@@ -566,6 +567,8 @@ document.addEventListener("change", (event) => {
   ui.selectedResumeJobIds = selectedIds;
   const count = form.querySelector('[data-role="resume-job-count"]');
   if (count) count.textContent = String(selectedIds.length);
+  const submit = form.querySelector('button[type="submit"]');
+  if (submit) submit.disabled = selectedIds.length === 0;
 });
 
 document.addEventListener("submit", async (event) => {
@@ -648,7 +651,9 @@ document.addEventListener("submit", async (event) => {
       await hydrateHr({ force:true });
       ui.tab = "resume";
       refreshHrContent();
-      toast(`${saved.candidate_label} 已同时完成 ${saved.job_count} 个岗位评分，请人工复核`, "success");
+      toast(saved.job_count === 1
+        ? `${saved.candidate_label} 已按投递岗位完成评分，请人工复核`
+        : `${saved.candidate_label} 已按 ${saved.job_count} 个投递岗位完成评分，请人工复核`, "success");
     } else if (form.id === "hr-managed-account-form") {
       const payload = {
         display_name:String(data.display_name || "").trim(),
