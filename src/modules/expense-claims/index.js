@@ -104,7 +104,7 @@ const showClaimModal = () => {
       <div class="form-group"><span class="form-label">登录账号</span><input class="form-control" value="${escapeHtml(ui.identity?.account || ui.identity?.subject || "")}" disabled /></div>
       ${formField(requiredLabel("所属公司"),"company","",{required:true})}
       ${formField(requiredLabel("费用类型"),"expense_type","",{required:true})}
-      ${formField("项目名称（选填）","project_name","")}
+      ${formField(requiredLabel("项目名称"),"project_name","",{required:true})}
       ${formField("成本中心","cost_center","")}
       <label class="form-group"><span class="form-label">${requiredLabel("费用金额（元）")}</span><input class="form-control" name="amount" type="number" min="0.01" step="0.01" required /></label>
       ${formField("发票 / 凭据号","invoice_reference","")}
@@ -119,9 +119,11 @@ const submitClaim = async (form) => {
   const data = Object.fromEntries(new FormData(form));
   const company = String(data.company || "").trim();
   const expenseType = String(data.expense_type || "").trim();
+  const projectName = String(data.project_name || "").trim();
   const amount = Number(data.amount);
   if (!company) throw new Error("请填写所属公司");
   if (!expenseType) throw new Error("请填写费用类型");
+  if (!projectName) throw new Error("请填写项目名称");
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("请填写大于0的费用金额");
   const files = [...(form.querySelector('[name="evidence_files"]')?.files || [])];
   if (!files.length) throw new Error("费用报销必须上传至少一张凭据截图");
@@ -138,7 +140,7 @@ const submitClaim = async (form) => {
     body:JSON.stringify({
       company,
       expense_type:expenseType,
-      project_name:data.project_name,
+      project_name:projectName,
       amount:data.amount,
       cost_center:data.cost_center,
       invoice_reference:data.invoice_reference,
