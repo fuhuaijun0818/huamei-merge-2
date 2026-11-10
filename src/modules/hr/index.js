@@ -168,13 +168,13 @@ const employeesPage = () => {
 const accountsPage = () => {
   const accounts = ui.data?.managedAccounts || [];
   const currentSubject = String(ui.data?.currentAccount?.subject || "");
-  const header = `<div class="hr-owner-strip"><span>员工账号管理</span><strong>仅限普通岗位</strong><small>人事可以创建和维护员工账号，但不能创建管理员、超级管理员，也不能修改本人权限。</small></div>`;
+  const header = `<div class="hr-owner-strip"><span>员工账号管理</span><strong>仅限普通岗位</strong><small>人事可以创建和维护员工账号；已停用账号可删除，但不能创建管理员、超级管理员或修改本人权限。</small></div>`;
   const error = ui.data?.accountError ? `<div class="risk-banner" role="alert">${icon("alert",15)}<div>员工账号暂时无法读取：${escapeHtml(ui.data.accountError)}</div></div>` : "";
   const actions = `<div class="hr-report-actions"><button class="btn primary" data-action="hr-new-managed-account">${icon("plus",14)}新增员工账号</button></div>`;
   if (!accounts.length) return `${header}${error}${actions}<section class="card">${empty("暂无员工登录账号", "新增员工账号后，账号会立即获得所选岗位对应的菜单和接口权限。")}</section>`;
   return `${header}${error}${actions}<section class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>姓名</th><th>登录账号</th><th>岗位</th><th>科室范围</th><th>状态</th><th>操作</th></tr></thead><tbody>${accounts.map((account) => {
     const isSelf = account.subject === currentSubject;
-    return `<tr><td><strong>${escapeHtml(account.display_name)}</strong><div class="caption">${escapeHtml(account.subject)}</div></td><td>${escapeHtml(account.account)}</td><td>${badge(account.business_role, "outline")}</td><td>${escapeHtml((account.department_ids || []).join("、"))}</td><td>${badge(account.enabled ? "启用" : "停用", account.enabled ? "success" : "warning")}</td><td>${isSelf ? '<span class="caption">当前登录账号</span>' : `<button class="link" data-action="hr-edit-managed-account" data-id="${escapeHtml(account.subject)}">编辑 / 重置密码</button>`}</td></tr>`;
+    return `<tr><td><strong>${escapeHtml(account.display_name)}</strong><div class="caption">${escapeHtml(account.subject)}</div></td><td>${escapeHtml(account.account)}</td><td>${badge(account.business_role, "outline")}</td><td>${escapeHtml((account.department_ids || []).join("、"))}</td><td>${badge(account.enabled ? "启用" : "停用", account.enabled ? "success" : "warning")}</td><td>${isSelf ? '<span class="caption">当前登录账号</span>' : `<div class="hr-account-actions"><button class="link" data-action="hr-edit-managed-account" data-id="${escapeHtml(account.subject)}">编辑 / 重置密码</button>${account.enabled ? "" : `<button class="link danger-text" data-action="hr-delete-managed-account" data-id="${escapeHtml(account.subject)}">删除</button>`}</div>`}</td></tr>`;
   }).join("")}</tbody></table></div></section>`;
 };
 
@@ -420,6 +420,23 @@ const showHrManagedAccountModal = (subject = "") => {
   });
 };
 
+const showDeleteManagedAccountModal = (subject) => {
+  const account = (ui.data?.managedAccounts || []).find((item) => item.subject === subject);
+  if (!account) return toast("未找到该员工账号", "warning");
+  if (account.enabled) return toast("只能删除已停用账号，请先停用", "warning");
+  if (account.subject === ui.data?.currentAccount?.subject) return toast("不能删除当前登录账号", "warning");
+  openModal({
+    title:"删除已停用员工账号",
+    desc:"删除登录账号不会删除历史业务和审计记录。",
+    body:`<div class="hr-account-delete-confirm">
+      <strong>${escapeHtml(account.display_name)}</strong>
+      <p>${escapeHtml(account.account)} · ${escapeHtml(account.business_role)} · ${escapeHtml((account.department_ids || []).join("、"))}</p>
+      <div class="guardrail">${icon("shield",14)}删除后该账号无法再次登录，账号列表不再显示。此操作不可撤销；审计日志仍保留。</div>
+    </div>`,
+    footer:`<button class="btn" data-action="modal-close">取消</button><button class="btn danger" data-action="hr-confirm-delete-managed-account" data-id="${escapeHtml(account.subject)}" data-version="${account.version}">${icon("trash",14)}确认删除</button>`
+  });
+};
+
 let activeRecognition = null;
 const startVoiceWorkLog = () => {
   const field = document.querySelector("#hr-worklog-content");
@@ -528,6 +545,27 @@ const handleHrAction = async (action, id, target) => {
   }
   if (action === "hr-new-managed-account") return showHrManagedAccountModal();
   if (action === "hr-edit-managed-account") return showHrManagedAccountModal(id);
+  if (action === "hr-delete-managed-account") return showDeleteManagedAccountModal(id);
+  if (action === "hr-confirm-delete-managed-account") {
+    if (target.disabled) return;
+    target.disabled = true;
+    try {
+      const deleted = await request("/api/admin/hr/accounts/delete", {
+        method:"POST",
+        headers:{ "Idempotency-Key":key("hr-managed-account-delete") },
+        body:JSON.stringify({ subject:id, expected_version:Number(target.dataset.version) })
+      });
+      closeModal();
+      await hydrateHr({ force:true });
+      ui.tab = "accounts";
+      refreshHrContent();
+      toast(`员工账号 ${deleted.account} 已删除`, "success");
+    } catch (error) {
+      target.disabled = false;
+      toast(error.message, "danger");
+    }
+    return;
+  }
   if (action === "hr-complete-task") return showCompleteTaskModal(id, target.dataset.taskId || "");
   if (action === "hr-voice-worklog") return startVoiceWorkLog();
   if (action === "hr-save-worklog") return saveHrWorkLog(target);

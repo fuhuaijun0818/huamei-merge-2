@@ -1,4 +1,4 @@
-import { applyManagementAccount, createManagedAccountForHr, listManagedAccountsForHr, listManagementAccounts, saveManagementAccount } from "./platform/management-accounts.mjs";
+import { applyManagementAccount, createManagedAccountForHr, deleteManagedAccountForHr, listManagedAccountsForHr, listManagementAccounts, saveManagementAccount } from "./platform/management-accounts.mjs";
 import { listKnowledgePublications, createKnowledgePublication, mutateKnowledgePublication } from "./knowledge-publication.mjs";
 import { memberRepeatCheckConfiguration } from "./integrations/member-repeatcheck-client.mjs";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
@@ -972,6 +972,7 @@ export async function handleApiRequest(request, response) {
     const method = request.method;
     const taskMatch = url.pathname.match(/^\/api\/admin\/hr\/workflows\/(hr(?:onb|off)_[a-f0-9-]+)\/tasks\/(hrtask_[a-f0-9-]+)\/complete$/i);
     const accountRoute = url.pathname === "/api/admin/hr/accounts";
+    const accountDeleteRoute = url.pathname === "/api/admin/hr/accounts/delete";
     const resumeFileRoute = url.pathname === "/api/admin/hr/resume-screenings/file";
     const resumeFileBatchRoute = url.pathname === "/api/admin/hr/resume-screenings/file-batch";
     const resumeJobProfileRoute = url.pathname === "/api/admin/hr/resume-job-profile";
@@ -979,6 +980,7 @@ export async function handleApiRequest(request, response) {
     const resumeJobProfileDeleteMatch = url.pathname.match(/^\/api\/admin\/hr\/resume-job-profiles\/(hrjob_[a-f0-9-]+)$/i);
     const supported = (method === "GET" && url.pathname === "/api/admin/hr")
       || (["GET", "POST"].includes(method) && accountRoute)
+      || (method === "POST" && accountDeleteRoute)
       || (method === "POST" && resumeFileRoute)
       || (method === "POST" && resumeFileBatchRoute)
       || (method === "POST" && resumeJobProfileRoute)
@@ -998,7 +1000,7 @@ export async function handleApiRequest(request, response) {
     try {
       const hrRead = method === "GET" && !accountRoute;
       principal = await authorizeManagementRequest(request, {
-        ...(accountRoute
+        ...(accountRoute || accountDeleteRoute
           ? { requiredCapabilities:[PHASE_ONE_CAPABILITIES.hrAccountsCreate] }
           : hrRead
           ? { requiredAnyCapabilities:[PHASE_ONE_CAPABILITIES.hrRead, PHASE_ONE_CAPABILITIES.hrManage] }
@@ -1055,6 +1057,8 @@ export async function handleApiRequest(request, response) {
         data = await createOnboardingWorkflow({ tenantId:principal.tenantId, actor:principal.subject, payload });
       } else if (url.pathname === "/api/admin/hr/offboarding") {
         data = await createOffboardingWorkflow({ tenantId:principal.tenantId, actor:principal.subject, payload });
+      } else if (accountDeleteRoute) {
+        data = await deleteManagedAccountForHr(payload, principal);
       } else if (accountRoute) {
         data = payload.subject
           ? await saveManagementAccount(payload, principal)
@@ -1090,7 +1094,7 @@ export async function handleApiRequest(request, response) {
           externalReference:payload.external_reference
         });
       }
-      sendJson(request, response, requestId, resumeJobProfileDeleteMatch ? 200 : 201, { data, request_id:requestId });
+      sendJson(request, response, requestId, (resumeJobProfileDeleteMatch || accountDeleteRoute) ? 200 : 201, { data, request_id:requestId });
     } catch (error) {
       sendError(request, response, requestId, Number(error.status) || 400, error.code || "HR_OPERATION_FAILED", error.message || "人事操作失败", error.details || []);
     }

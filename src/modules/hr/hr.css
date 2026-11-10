@@ -118,6 +118,11 @@
 .hr-resume-detail h4 { margin:0 0 8px; color:#684d52; font-size:10px; }
 .hr-resume-detail-terms { display:flex; flex-wrap:wrap; gap:6px; }
 .hr-resume-detail-terms em { color:#9b8789; font-size:9px; font-style:normal; }
+.hr-account-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.hr-account-actions .danger-text { color:#a43d49; }
+.hr-account-delete-confirm { display:grid; gap:7px; padding:15px; border:1px solid #ead5d2; border-radius:12px; background:#fff9f8; }
+.hr-account-delete-confirm > strong { color:#583d42; font-size:15px; }
+.hr-account-delete-confirm > p { margin:0; color:#927d80; font-size:10px; }
 .hr-resume-profile-empty { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:22px; }
 .hr-resume-profile-empty span,.hr-resume-job-copy > div > span,.hr-resume-upload > div > span { color:#9a6f76; font-size:9px; letter-spacing:.08em; }
 .hr-resume-profile-empty h3,.hr-resume-job h3,.hr-resume-upload h3 { margin:5px 0 7px; color:#4d373b; font-size:18px; }

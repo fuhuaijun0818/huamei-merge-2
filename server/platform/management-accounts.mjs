@@ -66,6 +66,26 @@ export async function createManagedAccountForHr(input,p){
  if(String(input?.subject||'').trim())throw fail('HR_ACCOUNT_CREATE_ONLY','人事新增账号接口不能修改已有账号',400);
  return saveManagementAccount(input,p);
 }
+export async function deleteManagedAccountForHr(input,p){
+ requirePhaseOneCapability(p,'hr:accounts:create');
+ if(!postgresPersistenceEnabled())throw fail('MANAGEMENT_ACCOUNT_STORE_REQUIRED','人员管理需要数据库',503);
+ const subject=String(input?.subject||'').trim();
+ const expectedVersion=Number(input?.expected_version);
+ if(!subject)throw fail('MANAGEMENT_SUBJECT_REQUIRED','请选择要删除的员工账号',400);
+ if(subject===p.subject)throw fail('HR_ACCOUNT_SELF_DELETE_FORBIDDEN','不能删除当前登录账号',403);
+ return postgres().tenantTransaction(p.tenantId,async client=>{
+  const row=(await client.query('SELECT * FROM management_accounts WHERE tenant_id=$1 AND subject=$2 FOR UPDATE',[p.tenantId,subject])).rows[0];
+  if(!row)throw fail('MANAGEMENT_ACCOUNT_NOT_FOUND','账号不存在',404);
+  if(!hrCreatableRole(row.business_role)||!accountWithinScope(row,p))throw fail('HR_ACCOUNT_ROLE_FORBIDDEN','人事账号只能删除授权范围内的普通员工账号',403);
+  if(row.enabled)throw fail('HR_ACCOUNT_DELETE_REQUIRES_DISABLED','只能删除已停用账号，请先停用',409);
+  if(!Number.isInteger(expectedVersion)||expectedVersion!==row.version)throw fail('MANAGEMENT_ACCOUNT_VERSION_CONFLICT','人员权限已变化，请刷新后重试',409);
+  const activeHandovers=(await client.query("SELECT count(*)::integer AS n FROM handovers WHERE tenant_id=$1 AND assignee=$2 AND status='claimed'",[p.tenantId,subject])).rows[0].n;
+  if(activeHandovers)throw fail('HR_ACCOUNT_ACTIVE_WORK','该账号仍有在办交接事项，不能删除',409);
+  await client.query('DELETE FROM management_accounts WHERE tenant_id=$1 AND subject=$2',[p.tenantId,subject]);
+  await appendAuditEvent(client,{tenantId:p.tenantId,actorId:p.subject,actorType:'human',action:'management.account.deleted',resourceType:'management_account',resourceId:subject,details:{account:row.account,display_name:row.display_name,business_role:row.business_role,department_ids:row.department_ids,version:row.version}});
+  return {...safe(row),deleted_at:new Date().toISOString()};
+ });
+}
 export async function saveManagementAccount(input,p){
  const canManageUsers=hasPhaseOneCapability(p,'users:manage');
  const canCreateHrAccounts=hasPhaseOneCapability(p,'hr:accounts:create');

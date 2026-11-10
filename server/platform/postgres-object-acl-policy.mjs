@@ -16,6 +16,10 @@ export const POSTGRES_RUNTIME_TABLE_GRANT_GROUPS = Object.freeze([
   Object.freeze({
     privileges:Object.freeze(["SELECT"]),
     tables:Object.freeze(["data_migration_batches", "knowledge_releases", "knowledge_reviews"])
+  }),
+  Object.freeze({
+    privileges:Object.freeze(["DELETE"]),
+    tables:Object.freeze(["management_accounts"])
   })
 ]);
 
@@ -32,9 +36,14 @@ export const POSTGRES_RUNTIME_CALLABLE_FUNCTIONS = Object.freeze([
   ...POSTGRES_APPROVED_SECURITY_DEFINER_FUNCTIONS
 ]);
 
-export const postgresRuntimeTablePrivilegeMap = () => new Map(
-  POSTGRES_RUNTIME_TABLE_GRANT_GROUPS.flatMap((group) => group.tables.map((table) => [
-    table,
-    new Set(group.privileges)
-  ]))
-);
+export const postgresRuntimeTablePrivilegeMap = () => {
+  const result = new Map();
+  for (const group of POSTGRES_RUNTIME_TABLE_GRANT_GROUPS) {
+    for (const table of group.tables) {
+      const privileges = result.get(table) || new Set();
+      for (const privilege of group.privileges) privileges.add(privilege);
+      result.set(table, privileges);
+    }
+  }
+  return result;
+};

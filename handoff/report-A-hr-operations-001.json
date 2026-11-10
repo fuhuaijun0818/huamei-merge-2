@@ -1,7 +1,7 @@
 {
   "role": "A",
   "task_id": "hr-operations-001",
-  "summary": "新增独立人事管理模块和“人事专员”最小权限岗位。人事专员拥有hr:read、hr:manage和hr:accounts:create，只能访问人事管理、入职离职流程、简历筛选、人事日周月报，并可创建、编辑和重置普通员工账号；不能进入全局账号页，不能创建或修改系统管理员/超级管理员，也不能修改本人权限，客户、会话、知识发布、经营分析和系统配置权限仍为拒绝。简历筛选助手支持人工维护多个招聘岗位，每个岗位独立保存名称、部门、JD、启停状态和配置版本；上传区默认不勾选岗位，要求按简历实际投递岗位选择，通常只选1个，同一简历确实投递多个岗位时才可多选，最多20个。一份PDF、DOCX、TXT或Markdown附件只解析一次，即可按所选岗位分别生成评分和匹配依据，评分记录绑定岗位ID、名称和版本，服务端不保存原文件。评分结果按60分阈值用绿色和玫红色区分，并可打开详情弹窗查看完整匹配项、待核实项和来源；颜色不自动淘汰候选人。已停用岗位可由人工删除，但历史评分快照继续保留；启用岗位必须先停用才能删除。旧版单岗位数据会自动迁移到岗位库。报告生成助手支持文字与浏览器语音转写工作记录、按员工账号独立生成日周月报、后台定时刷新和服务端飞书Webhook适配。模块同时包含员工档案、自动入职、自动离职和任务状态推进。",
+  "summary": "新增独立人事管理模块和“人事专员”最小权限岗位。人事专员拥有hr:read、hr:manage和hr:accounts:create，只能访问人事管理、入职离职流程、简历筛选、人事日周月报，并可创建、编辑、重置和删除已停用的普通员工账号；不能进入全局账号页，不能创建或修改系统管理员/超级管理员，不能删除本人账号，客户、会话、知识发布、经营分析和系统配置权限仍为拒绝。简历筛选助手支持人工维护多个招聘岗位，每个岗位独立保存名称、部门、JD、启停状态和配置版本；上传区默认不勾选岗位，要求按简历实际投递岗位选择，通常只选1个，同一简历确实投递多个岗位时才可多选，最多20个。一份PDF、DOCX、TXT或Markdown附件只解析一次，即可按所选岗位分别生成评分和匹配依据，评分记录绑定岗位ID、名称和版本，服务端不保存原文件。评分结果按60分阈值用绿色和玫红色区分，并可打开详情弹窗查看完整匹配项、待核实项和来源；颜色不自动淘汰候选人。已停用岗位可由人工删除，但历史评分快照继续保留；启用岗位必须先停用才能删除。旧版单岗位数据会自动迁移到岗位库。报告生成助手支持文字与浏览器语音转写工作记录、按员工账号独立生成日周月报、后台定时刷新和服务端飞书Webhook适配。模块同时包含员工档案、自动入职、自动离职和任务状态推进。",
   "acceptance_steps": [
     "使用管理员身份登录后进入“经营治理 → 人事管理”，可看到员工、入职流程、离职流程和报告四个标签页。",
     "发起入职并填写姓名、独立登录账号、部门、岗位、入职日期和负责人；预期自动生成资料、合同、账号、资产、带教和首日确认六项任务，并为该账号自动建立日报、周报、月报。",
@@ -21,7 +21,8 @@
     "配置HUAMEI_FEISHU_REPORT_WEBHOOK后更新报告；预期服务端尝试投递并记录真实回执。未配置时报告明确显示“飞书未配置”，不伪造已发送。",
     "使用人事专员账号hr.specialist登录并进入“账号管理”；预期可看到普通员工账号列表和“新增员工账号”，岗位下拉仅包含售前顾问、内容专员、发布与索引管理员、质量与运营人员、人事专员。",
     "以人事专员创建普通员工账号并设置初始密码；预期账号创建成功、新账号可登录，并立即获得所选普通岗位权限。",
-    "以人事专员尝试创建系统管理员、超级管理员或修改本人账号；预期均返回403。全局/api/admin/accounts仍返回403，/api/admin/hr/accounts返回200。"
+    "以人事专员尝试创建系统管理员、超级管理员或修改本人账号；预期均返回403。全局/api/admin/accounts仍返回403，/api/admin/hr/accounts返回200。",
+    "在账号管理列表中选择一个已停用普通账号，点击“删除”并二次确认；预期账号从列表移除且不能再次登录，审计日志继续保留。启用账号、本人账号、管理员或超级管理员不能删除。"
   ],
   "tests": [
     {
@@ -42,12 +43,12 @@
     {
       "command": "Chrome CDP 人事专员账号 hr.specialist 权限边界",
       "status": "pass",
-      "evidence": "身份role=人事专员，capabilities为hr:read/hr:manage/hr:accounts:create；可见导航仅“人事管理”；人事总览和人事账号接口200，全局账号、知识、集成、运营覆盖层接口均403；直接访问客户路由被退回人事页。人事账号密码只保存在被忽略的.team-dev/hr-account.private.json。"
+      "evidence": "身份role=人事专员，capabilities为hr:read/hr:manage/hr:accounts:create；可见导航为“费用申请”和“人事管理”；人事总览和人事账号接口200，全局账号、知识、集成、运营覆盖层接口均403；直接访问客户路由被退回人事页。人事账号密码只保存在被忽略的.team-dev/hr-account.private.json。"
     },
     {
       "command": "Chrome CDP 人事专员账号创建普通员工",
       "status": "pass",
-      "evidence": "账号管理页显示新增弹窗，岗位选项严格为五类普通岗位；通过页面创建售前顾问账号成功，列表立即显示该账号，随后使用页面设置的密码登录成功并读取到“售前顾问”身份。验收创建的临时账号已停用。"
+      "evidence": "账号管理页显示新增弹窗，岗位选项严格为五类普通岗位；通过页面创建售前顾问账号成功，列表立即显示该账号，随后使用页面设置的密码登录成功并读取到“售前顾问”身份。账号停用后页面出现删除入口，二次确认删除后从人事账号列表消失。"
     },
     {
       "command": "Chrome CDP 人事专员多岗位岗位库与附件评分",
@@ -57,7 +58,7 @@
     {
       "command": "node --env-file=.env.local tests/postgres-five-role-http-integration.mjs",
       "status": "pass",
-      "evidence": "真实PostgreSQL HTTP链路通过：人事GET/POST /api/admin/hr/accounts为200/201，全局/api/admin/accounts保持403；人事创建的售前账号可登录；人事可将其更新为内容专员；创建系统管理员、超级管理员及修改本人账号均返回403；人事账号列表不包含系统管理员或超级管理员。"
+      "evidence": "真实PostgreSQL HTTP链路通过：人事GET/POST /api/admin/hr/accounts为200/201，全局/api/admin/accounts保持403；人事创建的售前账号可登录；人事可将其更新为内容专员；创建系统管理员、超级管理员及修改本人账号均返回403；启用账号删除返回409，本人删除返回403；账号停用后可删除并从HR列表消失，删除后立即无法认证；人事账号列表不包含系统管理员或超级管理员。"
     },
     {
       "command": "node tests/phase-one-role-policy.mjs；node tests/management-role-navigation.mjs；node tests/superadministrator-policy.mjs",
@@ -170,6 +171,21 @@
       "path": "server/platform/management-accounts.mjs",
       "owner": "C",
       "change": "新增人事账号列表与创建路径；人事只能读取和修改授权科室内的五类普通员工账号，禁止修改本人、系统管理员和超级管理员"
+    },
+    {
+      "path": "server/platform/management-accounts.mjs",
+      "owner": "C",
+      "change": "新增已停用普通员工账号删除；校验科室范围、本人、普通岗位、启用状态、版本和未完成交接，删除后写审计事件"
+    },
+    {
+      "path": "server/platform/postgres-object-acl-policy.mjs",
+      "owner": "shared",
+      "change": "运行时表权限映射支持同一表多组权限合并，并为management_accounts增加显式DELETE权限"
+    },
+    {
+      "path": "src/modules/hr/",
+      "owner": "shared",
+      "change": "账号管理列表仅对已停用普通账号显示删除入口，增加二次确认、删除后刷新和账号消失结果"
     },
     {
       "path": "src/subpages.js",
@@ -292,12 +308,22 @@
       "interface": "POST /api/admin/hr/accounts",
       "change": "人事专员创建、编辑或重置普通员工账号；管理员/超级管理员创建、本人权限修改和越界科室均返回403",
       "breaking": false
+    },
+    {
+      "interface": "POST /api/admin/hr/accounts/delete",
+      "change": "人事专员删除授权范围内的已停用普通员工账号；启用账号返回409，本人账号返回403，版本冲突或在办交接返回409；删除写入审计事件",
+      "breaking": false
     }
   ],
   "migrations": [
     {
       "path": "db/migrations/019_hr_role.sql",
       "change": "management_accounts岗位约束新增人事专员",
+      "applied": true
+    },
+    {
+      "path": "db/migrations/022_management_account_delete.sql",
+      "change": "为huamei_runtime授予management_accounts表DELETE权限，支持删除已停用员工账号",
       "applied": true
     }
   ],
@@ -328,8 +354,8 @@
     "模块只管理人事流程和报告，不计算工资、个税、考勤工时或劳动法结论。",
     "本地开发人事账号hr.specialist已创建并绑定租户全部科室；密码仅保存在被Git忽略的.team-dev/hr-account.private.json，不进入交付包。",
     "管理员默认不再拥有HR权限；只有人事专员和超级管理员可访问人事接口。",
-    "人事账号管理只支持创建、编辑、重置密码和停用，不提供物理删除。",
+    "员工账号只允许删除已停用且无在办交接的普通账号；启用账号必须先停用。删除后账号不可恢复，但审计日志保留删除对象和操作者。",
     "人事专员没有服务事项移交权限；若售前账号存在未完成接待或预约，调整岗位、科室或停用需由系统管理员先完成工作移交。"
   ],
-  "rollback": "回退server/hr-operations.mjs、server/hr-resume-file.mjs、src/modules/hr/、tests/hr-operations.mjs、tests/hr-resume-file.mjs、人事账号相关角色能力与management-accounts改动，以及api-router、app、ui、index.html、package.json、package-lock.json、team-verify、ownership和env示例中的接入项，并移除pdf-parse/jszip依赖；HUAMEI_HR_STORE_FILE指向的本地人事数据和已创建账号不自动删除。"
+  "rollback": "回退server/hr-operations.mjs、server/hr-resume-file.mjs、src/modules/hr/、tests/hr-operations.mjs、tests/hr-resume-file.mjs、人事账号相关角色能力与management-accounts改动、运行时ACL策略和022迁移中的DELETE授权，以及api-router、app、ui、index.html、package.json、package-lock.json、team-verify、ownership和env示例中的接入项，并移除pdf-parse/jszip依赖；HUAMEI_HR_STORE_FILE指向的本地人事数据和已创建账号不自动删除。"
 }
