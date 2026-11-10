@@ -235,12 +235,13 @@ const resumePage = () => {
     ? `<form id="hr-quick-resume-form" class="card hr-resume-upload"><div class="hr-resume-job-batch"><div class="hr-resume-job-batch-head"><span>本次评分岗位（按实际投递岗位选择）</span><p>默认不勾选；通常只选1个岗位，同一简历投递多个岗位时才多选，最多20个。</p></div><div class="hr-resume-job-checks">${jobCheckboxes}</div></div><label class="hr-resume-file-picker"><input class="form-control" name="resume_file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required /><span>支持 PDF、DOCX、TXT、Markdown，最大 5MB；附件只在内存中解析，不保存原文件。扫描版PDF暂不支持OCR。</span></label><button class="btn primary" type="submit" ${selectedIds.size ? "" : "disabled"}>${icon("plus",15)}按 <span data-role="resume-job-count">${selectedIds.size}</span> 个投递岗位评分</button></form>`
     : `<section class="card">${empty(profiles.length ? "当前没有启用岗位" : "尚未添加招聘岗位", profiles.length ? "编辑任一岗位并切换为启用，或新增一个招聘岗位后再上传简历。" : "新增岗位并填写JD后，才能对简历进行评分。")}</section>`;
   if (!screenings.length) return `${header}${library}${upload}<section class="card">${empty("还没有简历筛选记录", "选择岗位并上传简历附件后，系统会显示匹配关键词、待核实项和建议复核分。")}</section>`;
-  return `${header}${library}${upload}<div class="hr-resume-grid">${screenings.map((item) => `<article class="card hr-resume-card">
+  const scoreLegend = `<div class="hr-resume-score-legend"><span><i class="high"></i>60分及以上 · 可进入人工复核</span><span><i class="low"></i>低于60分 · 匹配度较低</span><small>颜色只用于快速区分，不自动淘汰候选人。</small></div>`;
+  return `${header}${library}${upload}${scoreLegend}<div class="hr-resume-grid">${screenings.map((item) => `<article class="card hr-resume-card ${item.score >= 60 ? "score-high" : "score-low"}">
     <header><div><span>${escapeHtml(item.job_title)}</span><h3>${escapeHtml(item.candidate_label)}</h3></div><strong>${item.score}<small>/100</small></strong></header>
-    ${badge(item.verdict, item.score >= 80 ? "success" : item.score >= 60 ? "warning" : "outline")}
+    ${badge(item.verdict, item.score >= 60 ? "success" : "danger")}
     <div class="hr-resume-terms"><div><span class="hr-resume-term-label">匹配项</span>${item.matched_terms.length ? item.matched_terms.map((term) => badge(term, "success")).join("") : "<em>暂无</em>"}</div><div><span class="hr-resume-term-label">待核实</span>${item.missing_terms.length ? item.missing_terms.map((term) => badge(term, "outline")).join("") : "<em>无</em>"}</div></div>
     <p>${escapeHtml(item.note)}</p>
-    <footer>${item.source_type === "file" ? `附件 ${escapeHtml(item.source_filename || "简历")} · ` : "文本录入 · "}${formatDate(item.created_at)} · 不自动淘汰</footer>
+    <footer><span>${item.source_type === "file" ? `附件 ${escapeHtml(item.source_filename || "简历")} · ` : "文本录入 · "}${formatDate(item.created_at)} · 不自动淘汰</span><button class="link" data-action="hr-view-resume-screening" data-id="${escapeHtml(item.id)}">查看详情</button></footer>
   </article>`).join("")}</div>`;
 };
 
@@ -361,6 +362,35 @@ const showDeleteResumeJobModal = (jobId) => {
   });
 };
 
+const showResumeScreeningModal = (screeningId) => {
+  const item = (ui.data?.resumeScreenings || []).find((candidate) => candidate.id === screeningId);
+  if (!item) return toast("未找到该简历评分记录", "warning");
+  const source = item.source_type === "file"
+    ? `${item.source_filename || "简历附件"} · ${item.parser || "附件解析"} · ${Number(item.extracted_chars || 0)}字符`
+    : "文本录入";
+  openModal({
+    title:`简历评分详情 · ${item.candidate_label}`,
+    desc:`${item.job_title} · 岗位版本 v${item.job_profile_version || "-"}`,
+    wide:true,
+    body:`<div class="hr-resume-detail">
+      <div class="hr-resume-detail-head ${item.score >= 60 ? "score-high" : "score-low"}">
+        <div><span>建议复核分</span><strong>${item.score}<small>/100</small></strong></div>
+        <div>${badge(item.verdict, item.score >= 60 ? "success" : "danger")}<p>${escapeHtml(item.note)}</p></div>
+      </div>
+      <div class="hr-resume-detail-meta">
+        <div><span>候选人</span><strong>${escapeHtml(item.candidate_label)}</strong></div>
+        <div><span>评分岗位</span><strong>${escapeHtml(item.job_title)}</strong></div>
+        <div><span>岗位版本</span><strong>v${item.job_profile_version || "-"}</strong></div>
+        <div><span>评分时间</span><strong>${formatDate(item.created_at)}</strong></div>
+      </div>
+      <section><h4>匹配项</h4><div class="hr-resume-detail-terms">${item.matched_terms.length ? item.matched_terms.map((term) => badge(term, "success")).join("") : "<em>暂无</em>"}</div></section>
+      <section><h4>待核实项</h4><div class="hr-resume-detail-terms">${item.missing_terms.length ? item.missing_terms.map((term) => badge(term, "outline")).join("") : "<em>无</em>"}</div></section>
+      <div class="guardrail">${icon("shield",14)}${escapeHtml(source)}；评分仅供人工初筛，不自动淘汰候选人。</div>
+    </div>`,
+    footer:`<button class="btn primary" data-action="modal-close">关闭</button>`
+  });
+};
+
 const showHrManagedAccountModal = (subject = "") => {
   const account = subject ? (ui.data?.managedAccounts || []).find((item) => item.subject === subject) : null;
   if (subject && !account) return toast("未找到该员工账号", "warning");
@@ -476,6 +506,7 @@ const handleHrAction = async (action, id, target) => {
   if (action === "hr-edit-resume-job") return showResumeJobProfileModal(id);
   if (action === "hr-configure-resume-job") return showResumeJobProfileModal(id);
   if (action === "hr-delete-resume-job") return showDeleteResumeJobModal(id);
+  if (action === "hr-view-resume-screening") return showResumeScreeningModal(id);
   if (action === "hr-confirm-delete-resume-job") {
     if (target.disabled) return;
     target.disabled = true;

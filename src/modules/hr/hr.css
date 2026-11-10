@@ -57,11 +57,21 @@
 .hr-owner-strip strong { color:#563d42; font-size:12px; }
 .hr-owner-strip small { color:#8d797b; font-size:10px; }
 .hr-resume-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.hr-resume-score-legend { display:flex; align-items:center; gap:16px; padding:10px 13px; border:1px solid #e6dcd7; border-radius:11px; color:#756467; background:#fffdfc; font-size:9px; }
+.hr-resume-score-legend span { display:inline-flex; align-items:center; gap:6px; }
+.hr-resume-score-legend i { width:9px; height:9px; border-radius:50%; }
+.hr-resume-score-legend i.high { background:#43856b; }
+.hr-resume-score-legend i.low { background:#b34c5a; }
+.hr-resume-score-legend small { margin-left:auto; color:#9b888a; font-size:8px; }
 .hr-resume-card { padding:16px; }
+.hr-resume-card.score-high { border-color:#c9e1d5; background:linear-gradient(145deg,#fff,#f4fbf7); box-shadow:0 7px 22px rgba(56,119,88,.06); }
+.hr-resume-card.score-low { border-color:#ecd2d6; background:linear-gradient(145deg,#fff,#fff7f8); box-shadow:0 7px 22px rgba(151,64,78,.045); }
 .hr-resume-card > header { display:flex; justify-content:space-between; gap:12px; }
 .hr-resume-card header span { color:#96777b; font-size:9px; }
 .hr-resume-card h3 { margin:4px 0 8px; color:#4c383c; font-size:17px; }
 .hr-resume-card > header > strong { color:#7a3544; font-family:Georgia,serif; font-size:30px; font-weight:400; }
+.hr-resume-card.score-high > header > strong { color:#34765c; }
+.hr-resume-card.score-low > header > strong { color:#a84452; }
 .hr-resume-card > header small { color:#9b8588; font-size:10px; }
 .hr-resume-terms { display:grid; gap:9px; margin:13px 0; }
 .hr-resume-terms > div { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
@@ -69,7 +79,8 @@
 .hr-resume-terms .badge { width:auto; max-width:100%; white-space:normal; overflow-wrap:anywhere; text-align:left; line-height:1.35; }
 .hr-resume-terms em { color:#a28e90; font-size:9px; font-style:normal; }
 .hr-resume-card > p { margin:0 0 10px; color:#8b7678; font-size:9px; line-height:1.55; }
-.hr-resume-card > footer { padding-top:9px; border-top:1px solid #f0e5e3; color:#937f81; font-size:9px; }
+.hr-resume-card > footer { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-top:9px; border-top:1px solid #f0e5e3; color:#937f81; font-size:9px; }
+.hr-resume-card > footer > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .hr-resume-job-library { padding:18px; background:linear-gradient(135deg,#fffdfc,#fbf5f2); }
 .hr-resume-job-library-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
 .hr-resume-job-library-head > div { min-width:0; }
@@ -90,6 +101,23 @@
 .hr-resume-delete-confirm { display:grid; gap:6px; padding:15px; border:1px solid #ead5d2; border-radius:12px; background:#fff9f8; }
 .hr-resume-delete-confirm > strong { color:#583d42; font-size:15px; }
 .hr-resume-delete-confirm > p { margin:0; color:#927d80; font-size:10px; }
+.hr-resume-detail { display:grid; gap:12px; }
+.hr-resume-detail-head { display:grid; grid-template-columns:130px minmax(0,1fr); align-items:center; gap:14px; padding:15px; border:1px solid #e5dbd8; border-radius:13px; }
+.hr-resume-detail-head.score-high { border-color:#c9e1d5; background:#f4fbf7; }
+.hr-resume-detail-head.score-low { border-color:#ecd2d6; background:#fff7f8; }
+.hr-resume-detail-head > div:first-child { display:grid; gap:3px; }
+.hr-resume-detail-head > div:first-child > span { color:#907b7e; font-size:9px; }
+.hr-resume-detail-head > div:first-child > strong { color:#593d43; font-family:Georgia,serif; font-size:34px; font-weight:400; }
+.hr-resume-detail-head small { color:#9b8588; font-size:11px; }
+.hr-resume-detail-head p { margin:7px 0 0; color:#806d70; font-size:9px; line-height:1.55; }
+.hr-resume-detail-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.hr-resume-detail-meta > div { padding:9px 10px; display:grid; gap:3px; border:1px solid #ece2df; border-radius:9px; background:#fcfaf9; }
+.hr-resume-detail-meta span { color:#9a8789; font-size:8px; }
+.hr-resume-detail-meta strong { overflow:hidden; color:#5b4549; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.hr-resume-detail section { padding:10px 11px; border:1px solid #eee4e1; border-radius:10px; }
+.hr-resume-detail h4 { margin:0 0 8px; color:#684d52; font-size:10px; }
+.hr-resume-detail-terms { display:flex; flex-wrap:wrap; gap:6px; }
+.hr-resume-detail-terms em { color:#9b8789; font-size:9px; font-style:normal; }
 .hr-resume-profile-empty { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:22px; }
 .hr-resume-profile-empty span,.hr-resume-job-copy > div > span,.hr-resume-upload > div > span { color:#9a6f76; font-size:9px; letter-spacing:.08em; }
 .hr-resume-profile-empty h3,.hr-resume-job h3,.hr-resume-upload h3 { margin:5px 0 7px; color:#4d373b; font-size:18px; }
@@ -132,6 +160,9 @@
   .hr-report-metrics { grid-template-columns:repeat(4,minmax(80px,1fr)); }
   .hr-report-sections { grid-template-columns:1fr; }
   .hr-resume-grid { grid-template-columns:1fr; }
+  .hr-resume-score-legend { align-items:flex-start; flex-wrap:wrap; }
+  .hr-resume-score-legend small { width:100%; margin-left:0; }
+  .hr-resume-detail-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .hr-resume-job-list { grid-template-columns:1fr; }
   .hr-resume-job-checks { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .hr-resume-upload { grid-template-columns:1fr; align-items:stretch; }
@@ -155,6 +186,8 @@
   .hr-resume-job-library-head > .btn { width:100%; }
   .hr-resume-job-card-foot { align-items:stretch; flex-direction:column; }
   .hr-resume-job-card-foot > div { display:grid; grid-template-columns:1fr 1fr; }
+  .hr-resume-detail-head { grid-template-columns:1fr; }
+  .hr-resume-detail-meta { grid-template-columns:1fr; }
   .hr-resume-job-batch-head { flex-direction:column; gap:4px; }
   .hr-resume-job-batch-head p { text-align:left; }
   .hr-resume-job-checks { grid-template-columns:1fr; max-height:none; }
