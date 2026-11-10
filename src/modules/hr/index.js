@@ -225,7 +225,7 @@ const resumePage = () => {
         <div class="hr-resume-job-card-head"><div class="row wrap">${badge(active ? "可参与评分" : "已停用", active ? "outline" : "danger")}${badge(`v${profile.version}`, "outline")}</div><span>${escapeHtml(profile.department || "未指定部门")}</span></div>
         <h4>${escapeHtml(profile.job_title)}</h4>
         <p>${escapeHtml(profile.job_description)}</p>
-        <div class="hr-resume-job-card-foot"><small>更新于 ${formatDate(profile.updated_at)} · ${escapeHtml(profile.updated_by || "system")}</small><div><button class="btn small" data-action="hr-edit-resume-job" data-id="${escapeHtml(profile.id)}">${icon("edit",13)}编辑</button></div></div>
+        <div class="hr-resume-job-card-foot"><small>更新于 ${formatDate(profile.updated_at)} · ${escapeHtml(profile.updated_by || "system")}</small><div>${active ? "" : `<button class="btn small danger" data-action="hr-delete-resume-job" data-id="${escapeHtml(profile.id)}">${icon("trash",13)}删除</button>`}<button class="btn small" data-action="hr-edit-resume-job" data-id="${escapeHtml(profile.id)}">${icon("edit",13)}编辑</button></div></div>
       </article>`;
     }).join("")}</div>` : `<div class="hr-resume-profile-empty"><div><span>招聘岗位库为空</span><h3>先手动添加一个招聘岗位</h3><p>岗位JD保存后，选择该岗位即可连续上传简历附件评分。</p></div><button class="btn primary" data-action="hr-new-resume-job">${icon("plus",15)}添加第一个岗位</button></div>`}
   </section>`;
@@ -343,6 +343,23 @@ const showResumeJobProfileModal = (jobId = "") => {
   });
 };
 
+const showDeleteResumeJobModal = (jobId) => {
+  const profile = (ui.data?.resumeJobProfiles || []).find((item) => item.id === jobId);
+  if (!profile) return toast("未找到该招聘岗位，请刷新后重试", "warning");
+  if (profile.status !== "inactive") return toast("只能删除已停用的招聘岗位", "warning");
+  const screeningCount = (ui.data?.resumeScreenings || []).filter((item) => item.job_profile_id === profile.id).length;
+  openModal({
+    title:"删除已停用招聘岗位",
+    desc:"删除只会移除岗位卡，不会删除历史简历评分。",
+    body:`<div class="hr-resume-delete-confirm">
+      <strong>${escapeHtml(profile.job_title)}</strong>
+      <p>${escapeHtml(profile.department || "未指定部门")} · 配置版本 v${profile.version}</p>
+      <div class="guardrail">${icon("shield",14)}该岗位已有 ${screeningCount} 条历史评分；删除后这些记录仍保留原岗位名称、版本和评分快照。此操作不可撤销。</div>
+    </div>`,
+    footer:`<button class="btn" data-action="modal-close">取消</button><button class="btn danger" data-action="hr-confirm-delete-resume-job" data-id="${escapeHtml(profile.id)}">${icon("trash",14)}确认删除</button>`
+  });
+};
+
 const showHrManagedAccountModal = (subject = "") => {
   const account = subject ? (ui.data?.managedAccounts || []).find((item) => item.subject === subject) : null;
   if (subject && !account) return toast("未找到该员工账号", "warning");
@@ -457,6 +474,26 @@ const handleHrAction = async (action, id, target) => {
   if (action === "hr-new-resume-job") return showResumeJobProfileModal();
   if (action === "hr-edit-resume-job") return showResumeJobProfileModal(id);
   if (action === "hr-configure-resume-job") return showResumeJobProfileModal(id);
+  if (action === "hr-delete-resume-job") return showDeleteResumeJobModal(id);
+  if (action === "hr-confirm-delete-resume-job") {
+    if (target.disabled) return;
+    target.disabled = true;
+    try {
+      const deleted = await request(`/api/admin/hr/resume-job-profiles/${encodeURIComponent(id)}`, {
+        method:"DELETE",
+        headers:{ "Idempotency-Key":key("hr-resume-job-delete") }
+      });
+      closeModal();
+      await hydrateHr({ force:true });
+      ui.tab = "resume";
+      refreshHrContent();
+      toast(`已删除岗位“${deleted.job_title}”，保留 ${deleted.historical_screenings} 条历史评分`, "success");
+    } catch (error) {
+      target.disabled = false;
+      toast(error.message, "danger");
+    }
+    return;
+  }
   if (action === "hr-new-managed-account") return showHrManagedAccountModal();
   if (action === "hr-edit-managed-account") return showHrManagedAccountModal(id);
   if (action === "hr-complete-task") return showCompleteTaskModal(id, target.dataset.taskId || "");

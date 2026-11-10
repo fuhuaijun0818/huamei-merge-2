@@ -71,6 +71,7 @@ import {
   createHrWorkLog,
   createOffboardingWorkflow,
   createOnboardingWorkflow,
+  deleteResumeJobProfile,
   generateHrReport,
   getHrOverview,
   screenResume,
@@ -975,12 +976,14 @@ export async function handleApiRequest(request, response) {
     const resumeFileBatchRoute = url.pathname === "/api/admin/hr/resume-screenings/file-batch";
     const resumeJobProfileRoute = url.pathname === "/api/admin/hr/resume-job-profile";
     const resumeJobProfilesRoute = url.pathname === "/api/admin/hr/resume-job-profiles";
+    const resumeJobProfileDeleteMatch = url.pathname.match(/^\/api\/admin\/hr\/resume-job-profiles\/(hrjob_[a-f0-9-]+)$/i);
     const supported = (method === "GET" && url.pathname === "/api/admin/hr")
       || (["GET", "POST"].includes(method) && accountRoute)
       || (method === "POST" && resumeFileRoute)
       || (method === "POST" && resumeFileBatchRoute)
       || (method === "POST" && resumeJobProfileRoute)
       || (method === "POST" && resumeJobProfilesRoute)
+      || (method === "DELETE" && resumeJobProfileDeleteMatch)
       || (method === "POST" && url.pathname === "/api/admin/hr/onboarding")
       || (method === "POST" && url.pathname === "/api/admin/hr/offboarding")
       || (method === "POST" && url.pathname === "/api/admin/hr/resume-screenings")
@@ -1007,9 +1010,9 @@ export async function handleApiRequest(request, response) {
         principal,
         requestId,
         request,
-        action:`management.hr.${taskMatch ? "task_complete" : url.pathname.split("/").at(-1)}`,
+        action:`management.hr.${taskMatch ? "task_complete" : resumeJobProfileDeleteMatch ? "resume_job_profile_delete" : url.pathname.split("/").at(-1)}`,
         resourceType:"hr_operations",
-        resourceId:taskMatch?.[1] || principal.tenantId
+        resourceId:taskMatch?.[1] || resumeJobProfileDeleteMatch?.[1] || principal.tenantId
       });
     } catch (error) {
       sendManagementAuthorizationError(request, response, requestId, error);
@@ -1031,16 +1034,24 @@ export async function handleApiRequest(request, response) {
       sendError(request, response, requestId, 400, "IDEMPOTENCY_KEY_REQUIRED", "人事写操作必须提供8–128字符的Idempotency-Key");
       return true;
     }
-    let payload;
-    try {
-      payload = await readJsonBody(request, (resumeFileRoute || resumeFileBatchRoute) ? HR_RESUME_FILE_MAX_JSON_BYTES : MAX_BODY_BYTES);
-    } catch (error) {
-      sendError(request, response, requestId, error.code === "BODY_TOO_LARGE" ? 413 : 400, error.code || "INVALID_JSON", "请求体不是有效JSON");
-      return true;
+    let payload = {};
+    if (method !== "DELETE") {
+      try {
+        payload = await readJsonBody(request, (resumeFileRoute || resumeFileBatchRoute) ? HR_RESUME_FILE_MAX_JSON_BYTES : MAX_BODY_BYTES);
+      } catch (error) {
+        sendError(request, response, requestId, error.code === "BODY_TOO_LARGE" ? 413 : 400, error.code || "INVALID_JSON", "请求体不是有效JSON");
+        return true;
+      }
     }
     try {
       let data;
-      if (url.pathname === "/api/admin/hr/onboarding") {
+      if (resumeJobProfileDeleteMatch) {
+        data = await deleteResumeJobProfile({
+          tenantId:principal.tenantId,
+          actor:principal.subject,
+          jobProfileId:resumeJobProfileDeleteMatch[1]
+        });
+      } else if (url.pathname === "/api/admin/hr/onboarding") {
         data = await createOnboardingWorkflow({ tenantId:principal.tenantId, actor:principal.subject, payload });
       } else if (url.pathname === "/api/admin/hr/offboarding") {
         data = await createOffboardingWorkflow({ tenantId:principal.tenantId, actor:principal.subject, payload });
@@ -1079,7 +1090,7 @@ export async function handleApiRequest(request, response) {
           externalReference:payload.external_reference
         });
       }
-      sendJson(request, response, requestId, 201, { data, request_id:requestId });
+      sendJson(request, response, requestId, resumeJobProfileDeleteMatch ? 200 : 201, { data, request_id:requestId });
     } catch (error) {
       sendError(request, response, requestId, Number(error.status) || 400, error.code || "HR_OPERATION_FAILED", error.message || "人事操作失败", error.details || []);
     }

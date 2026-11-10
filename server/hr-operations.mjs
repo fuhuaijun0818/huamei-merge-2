@@ -487,6 +487,41 @@ export async function saveResumeJobProfile({ tenantId, actor, payload = {} } = {
   });
 }
 
+export async function deleteResumeJobProfile({ tenantId, actor, jobProfileId } = {}) {
+  const profileId = text(jobProfileId, 80);
+  if (!profileId) {
+    throw Object.assign(new Error("招聘岗位编号不能为空"), { code:"HR_RESUME_JOB_PROFILE_ID_REQUIRED", status:400 });
+  }
+  return withState(async (state) => {
+    const tenant = reconcileTenant(tenantState(state, tenantId));
+    const profile = tenant.resumeJobProfiles.find((item) => item.id === profileId);
+    if (!profile) {
+      throw Object.assign(new Error("未找到对应招聘岗位"), { code:"HR_RESUME_JOB_PROFILE_NOT_FOUND", status:404 });
+    }
+    if (profile.status !== "inactive") {
+      throw Object.assign(new Error("只能删除已停用的招聘岗位，请先停用"), { code:"HR_RESUME_JOB_PROFILE_ACTIVE", status:409 });
+    }
+    const historicalScreenings = tenant.resumeScreenings.filter((item) => item.job_profile_id === profile.id).length;
+    tenant.resumeJobProfiles = tenant.resumeJobProfiles.filter((item) => item.id !== profile.id);
+    tenant.resumeJobProfile = tenant.resumeJobProfile?.id === profile.id
+      ? tenant.resumeJobProfiles.find((item) => item.status === "active") || null
+      : tenant.resumeJobProfiles.find((item) => item.id === tenant.resumeJobProfile?.id) || tenant.resumeJobProfiles.find((item) => item.status === "active") || null;
+    const deletedAt = nowIso();
+    appendEvent(tenant, {
+      type:"resume.job_profile_deleted",
+      actor,
+      detail:`删除已停用岗位：${profile.job_title} · 保留历史评分${historicalScreenings}条`
+    });
+    tenant.revision += 1;
+    return clone({
+      id:profile.id,
+      job_title:profile.job_title,
+      deleted_at:deletedAt,
+      historical_screenings:historicalScreenings
+    });
+  });
+}
+
 const scoreResumeAgainstJob = ({ job = null, jd, resume, candidateLabel, payload = {}, actor = "system", timestamp = nowIso(), batchId = null }) => {
   const terms = extractResumeTerms(jd);
   const normalizedResume = normalizedResumeText(resume);

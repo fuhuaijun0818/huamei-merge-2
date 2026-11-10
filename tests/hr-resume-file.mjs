@@ -174,6 +174,27 @@ await assertCode(hr.screenResumeAttachmentForJobs({
 const afterInactive = await hr.getHrOverview({ tenantId:"tenant-hr-resume-file", actor:"hr-resume-test" });
 assert.equal(afterInactive.resumeJobProfiles.length, 2);
 assert.equal(afterInactive.resumeJobProfile.id, profile.id, "停用当前岗位后应回退到仍启用的岗位");
+await assertCode(hr.deleteResumeJobProfile({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  jobProfileId:profile.id
+}), "HR_RESUME_JOB_PROFILE_ACTIVE");
+const deletedJob = await hr.deleteResumeJobProfile({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  jobProfileId:secondProfile.id
+});
+assert.equal(deletedJob.id, secondProfile.id);
+assert.equal(deletedJob.historical_screenings, 2);
+const afterDelete = await hr.getHrOverview({ tenantId:"tenant-hr-resume-file", actor:"hr-resume-test" });
+assert.equal(afterDelete.resumeJobProfiles.length, 1);
+assert.equal(afterDelete.resumeJobProfiles[0].id, profile.id);
+assert.equal(afterDelete.resumeScreenings.filter((item) => item.job_profile_id === secondProfile.id).length, 2, "删除岗位不能删除历史评分快照");
+await assertCode(hr.deleteResumeJobProfile({
+  tenantId:"tenant-hr-resume-file",
+  actor:"hr-resume-test",
+  jobProfileId:secondProfile.id
+}), "HR_RESUME_JOB_PROFILE_NOT_FOUND");
 
 await assertCode(extractResumeAttachment({
   file_name:"resume.exe",
