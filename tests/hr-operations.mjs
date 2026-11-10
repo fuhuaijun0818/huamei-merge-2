@@ -229,6 +229,8 @@ assert.match(hrUiSource, /招聘岗位库/);
 assert.match(hrUiSource, /招聘岗位名称/);
 assert.match(hrUiSource, /hr-new-resume-job/);
 assert.match(hrUiSource, /hr-select-resume-job/);
+assert.match(hrUiSource, /hr-resume-job-select/);
+assert.match(hrUiSource, /#hr-quick-resume-form select\[name="job_profile_id"\]/);
 assert.match(hrUiSource, /hr-quick-resume-form/);
 assert.doesNotMatch(hrUiSource, /李江龙/);
 assert.match(hrUiSource, /报告生成助手 · 负责人：孟夕然/);

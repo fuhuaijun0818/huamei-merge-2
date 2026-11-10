@@ -222,8 +222,9 @@ const resumePage = () => {
       </article>`;
     }).join("")}</div>` : `<div class="hr-resume-profile-empty"><div><span>招聘岗位库为空</span><h3>先手动添加一个招聘岗位</h3><p>岗位JD保存后，选择该岗位即可连续上传简历附件评分。</p></div><button class="btn primary" data-action="hr-new-resume-job">${icon("plus",15)}添加第一个岗位</button></div>`}
   </section>`;
+  const jobOptions = activeProfiles.map((profile) => `<option value="${escapeHtml(profile.id)}" ${profile.id === selected?.id ? "selected" : ""}>${escapeHtml(profile.job_title)} · ${escapeHtml(profile.department || "未指定部门")} · v${profile.version}</option>`).join("");
   const upload = selected
-    ? `<form id="hr-quick-resume-form" class="card hr-resume-upload"><input type="hidden" name="job_profile_id" value="${escapeHtml(selected.id)}" /><div><span>当前评分岗位 · v${selected.version}</span><h3>${escapeHtml(selected.job_title)}</h3><p>${escapeHtml(selected.department || "未指定部门")}；支持 PDF、DOCX、TXT、Markdown，最大 5MB，候选人标识自动使用文件名。</p></div><label class="hr-resume-file-picker"><input class="form-control" name="resume_file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required /><span>附件只在内存中解析，不保存原文件；扫描版PDF暂不支持OCR。</span></label><button class="btn primary" type="submit">${icon("plus",15)}上传并评分</button></form>`
+    ? `<form id="hr-quick-resume-form" class="card hr-resume-upload"><label class="hr-resume-job-select"><span>本次评分岗位 · v${selected.version}</span><select class="form-control" name="job_profile_id" required>${jobOptions}</select><p>先选择本次简历对应的招聘岗位，再选择附件；岗位JD不会重复填写。</p></label><label class="hr-resume-file-picker"><input class="form-control" name="resume_file" type="file" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" required /><span>支持 PDF、DOCX、TXT、Markdown，最大 5MB；附件只在内存中解析，不保存原文件。扫描版PDF暂不支持OCR。</span></label><button class="btn primary" type="submit">${icon("plus",15)}上传并评分</button></form>`
     : `<section class="card">${empty(profiles.length ? "当前没有启用岗位" : "尚未添加招聘岗位", profiles.length ? "编辑任一岗位并切换为启用，或新增一个招聘岗位后再上传简历。" : "新增岗位并填写JD后，才能对简历进行评分。")}</section>`;
   if (!screenings.length) return `${header}${library}${upload}<section class="card">${empty("还没有简历筛选记录", "选择岗位并上传简历附件后，系统会显示匹配关键词、待核实项和建议复核分。")}</section>`;
   return `${header}${library}${upload}<div class="hr-resume-grid">${screenings.map((item) => `<article class="card hr-resume-card">
@@ -518,6 +519,13 @@ document.addEventListener("click", (event) => {
   event.stopImmediatePropagation();
   void handleHrAction(target.dataset.action, target.dataset.id || "", target);
 }, true);
+
+document.addEventListener("change", (event) => {
+  const select = event.target.closest?.('#hr-quick-resume-form select[name="job_profile_id"]');
+  if (!select) return;
+  ui.selectedResumeJobId = select.value;
+  refreshHrContent();
+});
 
 document.addEventListener("submit", async (event) => {
   const form = event.target;
