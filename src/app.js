@@ -2794,7 +2794,7 @@ function updateReceptionWindow() {
   if(document.visibilityState==='visible' && nearBottom)markConversationRead(store.conversation(ui.conversationId));
   const template=document.createElement('template');template.innerHTML=conversationsPage();
   const next=template.content;
-  for(const selector of ['.reception-filters','.conversation-items','.chat-head','.chat-body','.reception-tools']) {
+  for(const selector of ['.conversation-filter > .caption','.reception-filters','.conversation-items','.chat-head','.chat-body','.reception-tools']) {
     const current=layout.querySelector(selector),incoming=next.querySelector(selector);
     if(!current||!incoming||current.innerHTML===incoming.innerHTML)continue;
     if(selector==='.conversation-items') {

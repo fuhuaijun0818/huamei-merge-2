@@ -72,6 +72,7 @@ assert.match(app, /conversationFullSyncPending:\s*false/, "会话首次进入必
 assert.match(app, /正在同步最新会话/, "完整同步期间不得展示旧会话计数");
 assert.match(app, /if \(completeSnapshot\) ui\.conversationFullSyncPending = false/, "完整同步失败或完成后必须结束待同步状态");
 assert.match(app, /const afterCursor = !completeSnapshot && ui\.acquisitionSnapshotHydrated\s*\?\s*encodeAcquisitionCursors\(readAcquisitionCursors\(\)\)\s*:\s*"";/, "只有已加载完整快照的当前页面才允许按游标请求增量");
+assert.match(app, /'\.conversation-filter > \.caption','\.reception-filters'/, "会话数量和同步状态文字必须在同一次局部更新中刷新");
 assert.match(app, /store\.upsertAcquisitionSnapshot\(body\.data\);\s*persistAcquisitionCursors\(body\.data\?\.meta\?\.cursor\);\s*[\s\S]{0,320}ui\.acquisitionSnapshotHydrated = true;/, "首次全量同步成功后才能启用后续增量同步");
 assert.match(app, /正在加载会话/, "同步尚未完成时不能误报为空会话");
 assert.match(app, /会话同步失败/, "会话同步失败必须与真实空列表分开呈现");
