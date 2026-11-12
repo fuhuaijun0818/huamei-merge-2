@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
+import { createServer as createNetServer } from "node:net";
 import { isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,9 @@ if (!process.env.HUAMEI_LOCAL_ADMIN_SUBJECT) process.env.HUAMEI_LOCAL_ADMIN_SUBJ
 const servicePort = Number(process.env.HUAMEI_ACQUISITION_SERVICE_PORT || 4180);
 const serviceHost = process.env.HUAMEI_ACQUISITION_SERVICE_HOST || "127.0.0.1";
 const serviceUrl = String(process.env.HUAMEI_ACQUISITION_SERVICE_URL || `http://${serviceHost}:${servicePort}`).replace(/\/+$/, "");
+const webPort = Number(process.env.PORT || 4173);
+const webHost = process.env.HUAMEI_HOST || "127.0.0.1";
+const webUrl = `http://${webHost}:${webPort}`;
 const externallyManaged = String(process.env.HUAMEI_ACQUISITION_SERVICE_MANAGED_EXTERNALLY || "false").toLowerCase() === "true";
 const graphPort = Number(process.env.HUAMEI_GRAPHRAG_PORT || 4191);
 const graphHost = process.env.HUAMEI_GRAPHRAG_HOST || "127.0.0.1";
@@ -67,6 +71,39 @@ const runProcess = (command, args, label) => {
   return child;
 };
 const runNode = (entry) => runProcess(process.execPath, [join(root, entry)], entry);
+const isHealthy = async (url, path = "/health") => {
+  try {
+    const response = await fetch(`${url}${path}`, { signal:AbortSignal.timeout(1500) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+const portInUse = (host, port) => new Promise((resolve) => {
+  const probe = createNetServer();
+  probe.once("error", () => resolve(true));
+  probe.listen({ host, port }, () => probe.close(() => resolve(false)));
+});
+const [webRunning, serviceRunning] = await Promise.all([
+  isHealthy(webUrl, "/api/health"),
+  isHealthy(serviceUrl, "/health")
+]);
+if (webRunning && serviceRunning) {
+  console.log(`本地服务组已在运行：网页 ${webUrl}，售前智能体 ${serviceUrl}；本次不重复启动。`);
+  process.exit(0);
+}
+const [webPortBusy, servicePortBusy] = await Promise.all([
+  portInUse(webHost, webPort),
+  portInUse(serviceHost, servicePort)
+]);
+if (webPortBusy || servicePortBusy) {
+  const occupied = [
+    webPortBusy ? `网页端口 ${webHost}:${webPort}` : "",
+    servicePortBusy ? `售前智能体端口 ${serviceHost}:${servicePort}` : ""
+  ].filter(Boolean).join("、");
+  console.error(`${occupied} 已被其他进程占用，但未形成健康服务组。请先停止旧进程后重试。`);
+  process.exit(1);
+}
 
 const waitForService = async () => {
   for (let attempt = 0; attempt < 80; attempt += 1) {

@@ -1,0 +1,45 @@
+{
+  "role": "A",
+  "task_id": "local-stack-port-dedupe-001",
+  "summary": "修复本地完整开发栈重复启动时产生EADDRINUSE的问题。start-local-stack在启动GraphRAG和子服务之前检查网页4173与售前智能体4180；若两者均健康，则提示服务组已运行并成功退出，不再创建第二套进程；若端口被非健康进程占用，则输出明确错误并停止。",
+  "acceptance_steps": [
+    "运行npm run dev启动完整服务组，确认4173与4180健康。",
+    "保持服务组运行，在另一个终端再次执行npm run dev；预期提示本地服务组已在运行并退出0，不出现EADDRINUSE。",
+    "人为占用4173或4180且不提供健康接口后运行npm run dev；预期输出具体被占用端口并停止，不启动半套服务。",
+    "停止完整服务组后再次运行npm run dev；预期正常启动网页、售前智能体和GraphRAG。"
+  ],
+  "tests": [
+    {
+      "command": "node --check scripts/start-local-stack.mjs",
+      "status": "pass",
+      "evidence": "启动脚本语法检查通过。"
+    },
+    {
+      "command": "node scripts/start-local-stack.mjs（服务组已运行时）",
+      "status": "pass",
+      "evidence": "输出“本地服务组已在运行：网页 http://127.0.0.1:4173，售前智能体 http://127.0.0.1:4180；本次不重复启动。”并成功退出，没有新增进程或端口冲突。"
+    }
+  ],
+  "shared_changes": [
+    {
+      "path": "scripts/start-local-stack.mjs",
+      "owner": "shared",
+      "change": "启动前检查网页与售前服务健康状态和端口占用；健康服务组复用时幂等退出，非健康占用时清晰失败"
+    }
+  ],
+  "api_changes": [],
+  "migrations": [],
+  "dependency_changes": [],
+  "environment_variable_names": [
+    "PORT",
+    "HUAMEI_HOST",
+    "HUAMEI_ACQUISITION_SERVICE_HOST",
+    "HUAMEI_ACQUISITION_SERVICE_PORT",
+    "HUAMEI_ACQUISITION_SERVICE_URL"
+  ],
+  "known_limitations": [
+    "如果端口被其他非本项目服务占用，启动器只能明确报错，不会自动结束未知进程。",
+    "健康检查只确认HTTP就绪，不替代完整业务验收。"
+  ],
+  "rollback": "回退scripts/start-local-stack.mjs中的健康检查、端口探测和重复启动退出逻辑。"
+}
