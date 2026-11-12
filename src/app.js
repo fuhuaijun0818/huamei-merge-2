@@ -139,6 +139,7 @@ const ui = {
   operationsLoading: false,
   operationsError: "",
   conversationSyncLoading: false,
+  conversationFullSyncPending: false,
   conversationSyncError: "",
   // The store deliberately keeps acquisition conversations in memory only.
   // A new page therefore has no baseline to which a persisted cursor delta
@@ -935,6 +936,7 @@ function markConversationRead(conversation) {
 }
 
 function conversationsPage() {
+  const conversationCount = (value) => ui.conversationFullSyncPending ? "…" : value;
   const groupOf = item => {
     const task = linkedHandoverForConversation(item);
     const humanOwned = ["claimed", "active"].includes(task?.status) || task?.ai_suspended === true;
@@ -971,7 +973,7 @@ function conversationsPage() {
   const history = receptionHistoryWindow(current);
   return `<div class="page reception-page" style="padding-bottom:20px">${pageHead("客户沟通", "会话与接待", isPresalesWorkspace() ? "这里展示已进入聊天的客户会话。售前人员可实名接管、确认后将会话交回机器人，并调用已启用的常用话术；所有操作都会留下审计记录。" : "查看实时咨询、未读消息和接待状态；选择客户后处理对应会话。", isPresalesWorkspace() ? "" : `<button class="btn" data-action="conversation-stats">${icon("chart",15)}会话质量检查</button><button class="btn primary" data-action="new-conversation">${icon("plus",15)}发起会话</button>`)}
     <section class="card conversation-layout">
-      <aside class="conversation-list"><div class="conversation-filter"><strong>接待工作台</strong><div class="caption" role="status">${ui.conversationSyncError || "会话实时同步"}</div><div class="search-field" style="min-width:0;margin-top:12px">${icon("search",15)}<input id="reception-search" class="field" aria-label="搜索客户或会话" placeholder="搜索客户、渠道、会话内容" value="${escapeHtml(ui.conversationQuery)}"/></div><div class="reception-filters">${["全部","待人工","人工接待","机器人","已结束"].map(filter=>`<button class="tab-btn ${ui.conversationFilter===filter?'active':''}" data-action="conversation-filter" data-id="${filter}">${filter}<span>${store.state.conversations.filter(item=>filter==='全部'||groupOf(item)===filter).length}</span></button>`).join('')}</div></div><div class="conversation-items">${['待人工','人工接待','机器人','已结束'].map(group=>{const items=conversations.filter(item=>groupOf(item)===group);return items.length?`<details class="reception-group" open><summary>${group} <span>${items.length}</span></summary>${items.map(conversation=>{const itemCustomer=store.customer(conversation.customerId);if(!itemCustomer)return '';return `<button class="conversation-item ${conversation.id===current.id?'active':''}" data-search="${escapeHtml([customerDisplayName(itemCustomer),conversation.channel,conversation.lastMessage].join(' ').toLowerCase())}" data-action="select-conversation" data-id="${escapeHtml(conversation.id)}">${avatar(itemCustomer,'sm')}<div style="min-width:0"><div class="row"><span class="conversation-name">${escapeHtml(customerDisplayName(itemCustomer))}</span></div><div class="conversation-preview">${escapeHtml(conversation.lastMessage||'暂无消息')}</div><div class="customer-meta">${escapeHtml(conversation.channel)} · ${relativeTime(conversation.updatedAt)}</div></div>${conversationReads.unread(conversation)?`<span class="unread" aria-label="${conversationReads.unread(conversation)}条未读消息">${Math.min(conversationReads.unread(conversation),99)}${conversationReads.unread(conversation)>99?"+":""}</span>`:''}</button>`;}).join('')}</details>`:'';}).join('')}<p id="reception-empty" class="caption" hidden>没有匹配的会话，请调整搜索或分组。</p></div></aside>
+      <aside class="conversation-list"><div class="conversation-filter"><strong>接待工作台</strong><div class="caption" role="status">${ui.conversationSyncError || (ui.conversationFullSyncPending ? "正在同步最新会话…" : "会话实时同步")}</div><div class="search-field" style="min-width:0;margin-top:12px">${icon("search",15)}<input id="reception-search" class="field" aria-label="搜索客户或会话" placeholder="搜索客户、渠道、会话内容" value="${escapeHtml(ui.conversationQuery)}"/></div><div class="reception-filters">${["全部","待人工","人工接待","机器人","已结束"].map(filter=>`<button class="tab-btn ${ui.conversationFilter===filter?'active':''}" data-action="conversation-filter" data-id="${filter}">${filter}<span>${conversationCount(store.state.conversations.filter(item=>filter==='全部'||groupOf(item)===filter).length)}</span></button>`).join('')}</div></div><div class="conversation-items">${['待人工','人工接待','机器人','已结束'].map(group=>{const items=conversations.filter(item=>groupOf(item)===group);return items.length?`<details class="reception-group" open><summary>${group} <span>${conversationCount(items.length)}</span></summary>${items.map(conversation=>{const itemCustomer=store.customer(conversation.customerId);if(!itemCustomer)return '';return `<button class="conversation-item ${conversation.id===current.id?'active':''}" data-search="${escapeHtml([customerDisplayName(itemCustomer),conversation.channel,conversation.lastMessage].join(' ').toLowerCase())}" data-action="select-conversation" data-id="${escapeHtml(conversation.id)}">${avatar(itemCustomer,'sm')}<div style="min-width:0"><div class="row"><span class="conversation-name">${escapeHtml(customerDisplayName(itemCustomer))}</span></div><div class="conversation-preview">${escapeHtml(conversation.lastMessage||'暂无消息')}</div><div class="customer-meta">${escapeHtml(conversation.channel)} · ${relativeTime(conversation.updatedAt)}</div></div>${conversationReads.unread(conversation)?`<span class="unread" aria-label="${conversationReads.unread(conversation)}条未读消息">${Math.min(conversationReads.unread(conversation),99)}${conversationReads.unread(conversation)>99?"+":""}</span>`:''}</button>`;}).join('')}</details>`:'';}).join('')}<p id="reception-empty" class="caption" hidden>没有匹配的会话，请调整搜索或分组。</p></div></aside>
       <section class="chat"><header class="chat-head">${avatar(customer,"sm")}<div><strong>${escapeHtml(customerDisplayName(customer))}</strong><div class="customer-meta">${escapeHtml(current.channel)} · ${handover ? handoverStatusLabel(handover.status) : conversationStatusLabel(current.status)}</div></div><div class="caption" style="margin-left:6px;line-height:1.45"><strong style="color:var(--ink)">当前接待：${escapeHtml(assignee.title)}</strong><br/>${escapeHtml(assignee.detail)}</div><span class="spacer"></span><button class="btn small ghost" data-action="conversation-detail" data-id="${current.id}">详情</button>${acquisitionConversationControls(current, customer)}<button class="btn icon-only ghost" data-customer="${customer.id}" aria-label="客户360">${icon("users",17)}</button></header>
         <div class="chat-body">${history.hasEarlier ? `<div class="reception-history-loader"><button class="btn small ghost" data-action="load-earlier-messages" data-id="${escapeHtml(current.id)}">加载更早消息（还有 ${history.remaining} 条）</button></div>` : ""}${history.messages.length ? history.messages.map((message) => `<div class="message ${message.from === "customer" ? "customer" : message.from === "system" ? "system" : ""}" data-message-id="${escapeHtml(message.id || `${message.from}:${message.at}`)}">${message.from !== "system" ? `<div class="avatar sm" style="display:grid;place-items:center;background:${message.from === "customer" ? "#f0d4db" : "#ebe5f4"};color:${message.from === "customer" ? "var(--brand)" : "#7651a8"};font-size:10px;font-weight:800">${escapeHtml(message.from === "customer" ? customer.name.slice(0,1) : message.from === "staff" ? String(assignee.title || customer.owner).slice(0,1) : "AI")}</div>` : ""}<div><div class="message-bubble">${escapeHtml(message.text)}</div><div class="message-time">${formatDate(message.at)}</div></div></div>`).join("") : `<div class="empty">该会话暂无消息记录：客户只提交了联系方式，可在右侧查看客户资料。</div>`}</div>
         ${acquisitionConversationComposer(current, customer)}
@@ -5012,8 +5014,9 @@ window.addEventListener("hashchange", () => {
   clearRevealedContact({ markHidden:false });
   closeModal();
   if (!handoverOnlyMode) syncAvatarStudioScope();
-  render();
   const route = routeInfo();
+  if (route.route === "conversations") ui.conversationFullSyncPending = true;
+  render();
   if (route.route === "conversations") {
     // Entering the inbox must start from a complete view, not a cursor left
     // behind by a previous tab or SPA page.
@@ -5181,12 +5184,14 @@ const syncAcquisitionCustomers = async ({ full = false, background = false } = {
     return acquisitionSyncPromise.catch(() => []).then(() => syncAcquisitionCustomers({ full:true }));
   }
   if (background) lastBackgroundAcquisitionSyncAt = Date.now();
+  const completeSnapshot = full || !ui.acquisitionSnapshotHydrated;
+  if (completeSnapshot) ui.conversationFullSyncPending = true;
   ui.conversationSyncLoading = true;
   ui.conversationSyncError = "";
   if (routeInfo().route === "conversations" && !store.state.conversations.length) render(true);
   const qualityRedactedView = hasCapability("conversations:read_redacted")
     && !hasCapability("customers:read_all") && !hasCapability("customers:read_assigned");
-  const afterCursor = !full && ui.acquisitionSnapshotHydrated
+  const afterCursor = !completeSnapshot && ui.acquisitionSnapshotHydrated
     ? encodeAcquisitionCursors(readAcquisitionCursors())
     : "";
   // Quality replies contain pseudonymous IDs, not the source conversation
@@ -5212,10 +5217,11 @@ const syncAcquisitionCustomers = async ({ full = false, background = false } = {
     })
     .finally(() => {
       ui.conversationSyncLoading = false;
+      if (completeSnapshot) ui.conversationFullSyncPending = false;
       acquisitionSyncPromise = null;
       // A successful but truly empty response must replace the loading view;
       // a non-empty snapshot already triggers the normal store render.
-      if (routeInfo().route === "conversations" && !store.state.conversations.length) refreshOperationsView();
+      if (routeInfo().route === "conversations" && (completeSnapshot || !store.state.conversations.length)) refreshOperationsView();
     });
   return acquisitionSyncPromise;
 };
@@ -5474,6 +5480,7 @@ window.addEventListener("beforeunload", (event) => {
   if (unsavedFormDirty) event.preventDefault();
 });
 const bootstrapManagementApplication = async () => {
+  ui.conversationFullSyncPending = routeInfo().route === "conversations";
   const initialConversationRoute = routeInfo().route === "conversations";
   // Do not briefly present an empty inbox before the first authorized
   // conversation snapshot has had a chance to arrive.

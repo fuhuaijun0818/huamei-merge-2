@@ -1,0 +1,44 @@
+{
+  "role": "A",
+  "task_id": "conversation-count-stability-001",
+  "summary": "修复会话与接待页进入或返回时先显示旧快照数量、完整同步完成后再跳变的问题。进入会话页会明确标记完整同步中，全部及分组数量显示省略号而非旧数字；完整同步成功或失败后统一重绘，最终数量来自同一份服务端权威快照。",
+  "acceptance_steps": [
+    "登录后进入#/conversations；预期完整同步期间计数显示省略号并提示正在同步最新会话，不显示旧数字。",
+    "等待同步完成；预期全部、机器人等计数来自同一次完整快照，列表数量与接口唯一会话数一致。",
+    "切换到客户与会员页面，再返回会话与接待；预期重新完整同步期间不显示上一页面残留数量，完成后显示稳定结果。",
+    "连续停留并多次往返页面；在服务端数据未变化时，会话总数不应变化。"
+  ],
+  "tests": [
+    {
+      "command": "Chrome CDP 真实会话计数采样",
+      "status": "pass",
+      "evidence": "真实接口返回362个唯一会话；连续8秒采样均显示362。离开再返回时计数先显示“…”并提示正在同步，不展示旧341，完整快照完成后稳定显示362；多个后续采样点界面计数、列表数量和接口唯一数均为362。"
+    },
+    {
+      "command": "node tests/management-handover-ui.mjs",
+      "status": "pass",
+      "evidence": "会话完整同步状态、同步中计数和完成后重绘契约通过；既有接管、会话回复、未读和分页测试无回归。"
+    }
+  ],
+  "shared_changes": [
+    {
+      "path": "src/app.js",
+      "owner": "shared",
+      "change": "增加会话完整同步pending状态；进入会话页和返回时先隐藏旧计数，完整快照完成后统一重绘"
+    },
+    {
+      "path": "tests/management-handover-ui.mjs",
+      "owner": "shared",
+      "change": "新增会话计数同步状态和避免旧数字展示的契约"
+    }
+  ],
+  "api_changes": [],
+  "migrations": [],
+  "dependency_changes": [],
+  "environment_variable_names": [],
+  "known_limitations": [
+    "如果服务端在两次完整同步之间确实新增了会话，最终计数会更新；此次修复只避免旧快照造成的假变化。",
+    "会话列表仍会保留完整同步前的当前聊天内容，避免同步时聊天区域闪烁；只有数量和同步状态被标记为待更新。"
+  ],
+  "rollback": "回退src/app.js中的conversationFullSyncPending状态、会话计数占位和完整同步后重绘逻辑，以及对应测试。"
+}
