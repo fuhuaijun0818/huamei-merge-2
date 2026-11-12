@@ -10,6 +10,7 @@ const initial = getManagementDomainOverlay({ tenantId:"huamei-shanghai" });
 assert.equal(initial.revision, 0);
 assert.deepEqual(initial.overlay.customers, []);
 assert.deepEqual(initial.overlay.conversations, []);
+assert.deepEqual(initial.overlay.managementTasks, []);
 assert.deepEqual(initial.overlay.productOverrides, []);
 
 // Development PostgreSQL tenants use underscores; the management overlay
@@ -61,6 +62,14 @@ const overlay = {
     object:"C-local-1",
     result:"成功",
     severity:"低"
+  }],
+  managementTasks:[{
+    id:"T-local-1",
+    customerId:"C-local-1",
+    title:"本地改进任务",
+    status:"待处理",
+    managementTask:true,
+    dueAt:"2026-09-01T10:00:00.000Z"
   }]
 };
 
@@ -90,6 +99,7 @@ assert.equal(reloaded.revision, 1);
 assert.equal(reloaded.overlay.conversations[0].customerId, "C-local-1");
 assert.equal(reloaded.overlay.productOverrides[0].price, "¥5,980");
 assert.equal(reloaded.overlay.configurationRecords[0].name, "本地话术模板");
+assert.equal(reloaded.overlay.managementTasks[0].id, "T-local-1");
 
 assert.throws(() => replaceManagementDomainOverlay({
   tenantId:"huamei-shanghai",

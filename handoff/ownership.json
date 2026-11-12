@@ -118,6 +118,7 @@
     "src/management-runtime.js",
     "styles.css",
     "server/api-router.mjs",
+    "server/management-domain-store.mjs",
     "server/hr-operations.mjs",
     "server/hr-resume-",
     "server/finance-",

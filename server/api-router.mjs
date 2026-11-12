@@ -572,6 +572,7 @@ const presalesOverlayView = (record = {}, principal) => {
       managementRoles:[],
       customers:visibleCustomers,
       tasks:visibleTasks,
+      managementTasks:visibleTasks,
       conversations,
       journeys:[],
       agents:[],
@@ -1159,7 +1160,7 @@ export async function handleApiRequest(request, response) {
     try {
       if (read) {
         const record = getManagementDomainOverlay({ tenantId:principal.tenantId });
-        const data = hasPhaseOneCapability(principal, PHASE_ONE_CAPABILITIES.superadminManage) ? record : principal.phaseOneRole === PHASE_ONE_BUSINESS_ROLES.presales ? presalesOverlayView(record, principal) : {...record,overlay:{...record.overlay,customers:[],conversations:[],tasks:[],knowledgeOverrides:[],managementUsers:[],managementRoles:[]}};
+        const data = hasPhaseOneCapability(principal, PHASE_ONE_CAPABILITIES.superadminManage) ? record : principal.phaseOneRole === PHASE_ONE_BUSINESS_ROLES.presales ? presalesOverlayView(record, principal) : {...record,overlay:{...record.overlay,customers:[],conversations:[],tasks:[],managementTasks:[],knowledgeOverrides:[],managementUsers:[],managementRoles:[]}};
         sendJson(request, response, requestId, 200, { data, request_id:requestId });
         return true;
       }

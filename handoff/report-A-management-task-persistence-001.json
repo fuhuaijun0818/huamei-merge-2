@@ -1,0 +1,97 @@
+{
+  "role": "A",
+  "task_id": "management-task-persistence-001",
+  "summary": "修复团队工作台“生成改进任务”后本地运营任务未持久化、个人工作台点击完成却调用获客任务接口并返回任务不存在的问题。新增独立的managementTasks管理覆盖层集合，将本地改进任务和人工创建任务写入服务端管理数据；完成本地任务时走本地完成路径并等待覆盖层持久化，获客任务仍继续使用原有服务端任务完成接口。获客全量同步不会删除关联获客客户的本地管理任务。",
+  "acceptance_steps": [
+    "登录管理后台，进入#/workbench/team，点击“生成改进任务”；预期提示保存成功，管理覆盖层managementTasks中出现新任务。",
+    "进入#/workbench，在今日优先任务中点击该任务“详情”；预期打开任务详情，不再返回任务不存在。",
+    "点击“完成任务”；预期显示“任务已完成并保存到本地服务”，返回工作台后任务显示已完成。",
+    "重新打开已完成任务详情；预期仍能看到任务内容、关联客户和完成时间。",
+    "对获客服务产生的任务执行完成；预期仍调用原获客任务服务端接口并使用服务端确认结果更新界面。"
+  ],
+  "tests": [
+    {
+      "command": "node tests/management-domain-store.mjs",
+      "status": "pass",
+      "evidence": "管理覆盖层允许并持久化managementTasks，重新读取后任务仍在；原有基线、幂等和并发冲突测试通过。"
+    },
+    {
+      "command": "node tests/management-local-actions.mjs",
+      "status": "pass",
+      "evidence": "本地任务进入managementTasks，完成状态同步保存；重新水合后任务和完成状态保留；获客客户关联的本地管理任务不会被权威全量同步删除。"
+    },
+    {
+      "command": "node tests/management-handover-ui.mjs",
+      "status": "pass",
+      "evidence": "本地管理任务与获客任务完成路径分离；本地完成后等待管理覆盖层持久化；原人工接管、会话和工时契约无回归。"
+    },
+    {
+      "command": "Chrome CDP 4173 团队工作台生成并完成改进任务",
+      "status": "pass",
+      "evidence": "真实页面创建“优化人工接待排班”后，managementTasks立即出现待处理记录；点击详情正常打开，完成任务后状态持久化为已完成；返回工作台再次打开详情仍可用，未再出现“任务不存在或已被移除”。"
+    }
+  ],
+  "shared_changes": [
+    {
+      "path": "server/management-domain-store.mjs",
+      "owner": "shared",
+      "change": "管理覆盖层新增managementTasks集合及20万条上限"
+    },
+    {
+      "path": "server/api-router.mjs",
+      "owner": "shared",
+      "change": "售前裁剪视图返回其可见客户的managementTasks；其他非超级管理员视图不返回"
+    },
+    {
+      "path": "src/store.js",
+      "owner": "shared",
+      "change": "新增managementTasks持久化集合，水合时合并到任务列表；本地任务完成状态同步维护；获客权威同步保留本地管理任务"
+    },
+    {
+      "path": "src/app.js",
+      "owner": "shared",
+      "change": "本地任务完成后走本地持久化路径，获客任务继续调用服务端完成接口；生成改进任务和人工创建任务后等待覆盖层保存"
+    },
+    {
+      "path": "tests/management-domain-store.mjs",
+      "owner": "shared",
+      "change": "新增managementTasks覆盖层持久化回归"
+    },
+    {
+      "path": "tests/management-local-actions.mjs",
+      "owner": "shared",
+      "change": "新增本地任务创建、完成、水合和获客同步保留回归"
+    },
+    {
+      "path": "tests/management-handover-ui.mjs",
+      "owner": "shared",
+      "change": "新增本地与获客任务完成路径分离契约"
+    },
+    {
+      "path": "handoff/ownership.json",
+      "owner": "shared",
+      "change": "申报server/management-domain-store.mjs为共享评审路径"
+    }
+  ],
+  "api_changes": [
+    {
+      "interface": "GET /api/admin/management/domain-overlay",
+      "change": "响应overlay新增managementTasks；售前仅返回其可见客户关联任务，其他普通岗位不返回该集合",
+      "breaking": false
+    },
+    {
+      "interface": "PUT /api/admin/management/domain-overlay",
+      "change": "允许超级管理员持久化managementTasks；tasks仍保持服务端保护字段语义",
+      "breaking": false
+    }
+  ],
+  "migrations": [],
+  "dependency_changes": [],
+  "environment_variable_names": [],
+  "known_limitations": [
+    "managementTasks保存在现有管理覆盖层中，仍受当前覆盖层revision和幂等机制约束。",
+    "本地管理任务和获客任务使用不同完成接口；未来统一任务中心时需要迁移任务模型并保留两类任务ID语义。",
+    "本次修复未改变任务分配、转派和复杂审批流程。"
+  ],
+  "rollback": "回退server/management-domain-store.mjs、server/api-router.mjs、src/store.js、src/app.js、相关测试和ownership申报中的managementTasks改动；不删除已保存的本地任务记录，必要时由管理员人工导出后清理。"
+}

@@ -52,7 +52,7 @@ const normalizeMessageTemplateAccess = (record = {}) => {
 
 const OVERLAY_DYNAMIC_COLLECTIONS = Object.freeze([
   "managementUsers", "managementRoles", "customers", "tasks", "conversations",
-  "journeys", "agents", "connectors", "audit", "handovers", "configurationRecords"
+  "managementTasks", "journeys", "agents", "connectors", "audit", "handovers", "configurationRecords"
 ]);
 const OVERLAY_OVERRIDE_COLLECTIONS = Object.freeze([
   ["products", "productOverrides"],
@@ -137,6 +137,9 @@ export const applyManagementDomainOverlay = (overlay = {}, base = runtimeBaselin
   for (const collection of OVERLAY_DYNAMIC_COLLECTIONS) {
     state[collection] = clone(Array.isArray(overlay[collection]) ? overlay[collection] : []);
   }
+  const mergedTaskIds = new Set();
+  state.tasks = [...(state.managementTasks || []), ...(state.tasks || [])]
+    .filter((task) => task?.id && !mergedTaskIds.has(task.id) && mergedTaskIds.add(task.id));
   for (const [collection, overrideKey] of OVERLAY_OVERRIDE_COLLECTIONS) {
     state[collection] = mergeOverlayItems(base[collection] || [], overlay[overrideKey] || []);
   }
@@ -714,6 +717,11 @@ class Store extends EventTarget {
     if (!task) return;
     task.status = "已完成";
     task.completedAt = new Date().toISOString();
+    const managementTask = (this.state.managementTasks || []).find((item) => item.id === id);
+    if (managementTask) {
+      managementTask.status = task.status;
+      managementTask.completedAt = task.completedAt;
+    }
     const customer = this.customer(task.customerId);
     if (customer) customer.timeline.unshift({
       id: `E-${Date.now()}`, type: "task", title: `任务完成：${task.title}`, detail: `执行人：${task.assignee}；来源：${task.source}`, occurredAt: task.completedAt, actor: task.assignee, channel: "系统", tone: "positive"
@@ -725,12 +733,18 @@ class Store extends EventTarget {
     const current = this.task(task?.id);
     if (!current) return;
     Object.assign(current, sanitizeDisplayData(task));
+    const managementTask = (this.state.managementTasks || []).find((item) => item.id === task.id);
+    if (managementTask) Object.assign(managementTask, sanitizeDisplayData(task));
     this.save("task-completion");
   }
 
   addTask(payload) {
-    this.state.tasks.unshift(sanitizeDisplayData({ id: `T-${Date.now()}`, status: "待处理", ...payload }));
+    const task = sanitizeDisplayData({ id: `T-${Date.now()}`, status: "待处理", managementTask:true, ...payload });
+    this.state.managementTasks ||= [];
+    this.state.managementTasks.unshift(clone(task));
+    this.state.tasks.unshift(task);
     this.save();
+    return task;
   }
 
   addJourney(payload = {}) {
@@ -994,6 +1008,8 @@ class Store extends EventTarget {
     const persistedExplicitTestCustomerIds = new Set((this.state.customers || [])
       .filter(isExplicitAcquisitionTestCustomer)
       .map((item) => item.id));
+    const managementTaskIds = new Set((this.state.managementTasks || []).map((item) => item.id));
+    const isManagementTask = (task) => task?.managementTask === true || managementTaskIds.has(task?.id);
     if (!authoritative && !customers.length && !conversations.length && !tasks.length && !persistedExplicitTestCustomerIds.size) return false;
     const before = JSON.stringify({
       customers:this.state.customers,
@@ -1007,12 +1023,12 @@ class Store extends EventTarget {
       const previousAcquisitionCustomerIds = acquisitionCustomerIds(this.state);
       this.state.customers = this.state.customers.filter((item) => !previousAcquisitionCustomerIds.has(item.id));
       this.state.conversations = this.state.conversations.filter((item) => !previousAcquisitionCustomerIds.has(item.customerId));
-      this.state.tasks = this.state.tasks.filter((item) => !previousAcquisitionCustomerIds.has(item.customerId));
+      this.state.tasks = this.state.tasks.filter((item) => isManagementTask(item) || !previousAcquisitionCustomerIds.has(item.customerId));
     }
     if (persistedExplicitTestCustomerIds.size) {
       this.state.customers = this.state.customers.filter((item) => !persistedExplicitTestCustomerIds.has(item.id));
       this.state.conversations = this.state.conversations.filter((item) => !persistedExplicitTestCustomerIds.has(item.customerId));
-      this.state.tasks = this.state.tasks.filter((item) => !persistedExplicitTestCustomerIds.has(item.customerId));
+      this.state.tasks = this.state.tasks.filter((item) => isManagementTask(item) || !persistedExplicitTestCustomerIds.has(item.customerId));
     }
     const mergeById = (incoming = [], existing = []) => {
       const seen = new Set();

@@ -3818,7 +3818,8 @@ async function handleAction(action, id, target) {
         break;
       }
       store.addTask({ customerId: customer.id, title: "优化人工接待排班", type: "经营改进", priority: "高", dueAt: new Date(Date.now()+86400000).toISOString(), assignee: "", reason: "基于当前系统记录创建，待运营负责人补充分配依据", source: "数据洞察" });
-      toast("改进任务已保存到本地服务", "success");
+      const persisted = await flushManagementOverlay();
+      toast(persisted ? "改进任务已保存到本地服务" : "改进任务已创建，但尚未保存到本地服务，请重试", persisted ? "success" : "danger");
       break;
     }
     case "export-report": {
@@ -3936,6 +3937,13 @@ async function completeTaskFromUi(taskId, trigger) {
   const original = trigger?.innerHTML;
   if (trigger) { trigger.disabled = true; trigger.textContent = "正在保存…"; }
   try {
+    if (task.managementTask === true || /^T-/.test(task.id)) {
+      store.completeTask(taskId);
+      const persisted = await flushManagementOverlay();
+      if (!persisted) throw new Error("本地任务状态尚未保存");
+      toast("任务已完成并保存到本地服务", "success");
+      return;
+    }
     const result = await completeManagementTask(taskId, { customerId:task.customerId });
     if (result.task) store.applyTaskCompletion(result.task);
     toast("任务已完成并保存到服务端", "success");
@@ -4242,7 +4250,7 @@ async function sendCurrentMessage(conversationId) {
       const receipt = await sendManagementConversationReply(externalConversationId, text, { handoverVersion:handover.updated_at, idempotencyKey });
       clearReplyDraft(conversationId);
       if (input) input.value = "";
-      await syncAcquisitionCustomers();
+      if (!(task.managementTask === true || /^T-/.test(task.id))) await syncAcquisitionCustomers();
       toast(receipt?.delivery?.delivery_status === "delivered"
         ? "消息已送达前台客户端"
         : "消息已提交，等待前台客户端送达确认", "success");
@@ -4875,7 +4883,10 @@ document.addEventListener("submit", async (event) => {
     return;
   }
   if (form.id === "task-form") {
-    store.addTask({ ...data, dueAt: new Date(data.dueAt).toISOString(), source: "人工创建" }); closeModal(); toast("任务已创建并进入今日工作台", "success");
+    store.addTask({ ...data, dueAt: new Date(data.dueAt).toISOString(), source: "人工创建" });
+    const persisted = await flushManagementOverlay();
+    closeModal();
+    toast(persisted ? "任务已创建并保存到本地服务" : "任务已创建，但尚未保存到本地服务，请重试", persisted ? "success" : "danger");
   }
   if (form.id === "customer-note-form") {
     const customer = store.customer(form.dataset.customerId);

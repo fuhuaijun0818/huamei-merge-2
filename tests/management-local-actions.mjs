@@ -62,6 +62,23 @@ store.state.customers.push({
 });
 const customer = store.state.customers.find((item) => item.id === "C-test-local");
 assert.ok(customer, "test fixture must create a local management customer");
+const localTask = store.addTask({
+  customerId:customer.id,
+  title:"测试本地改进任务",
+  type:"经营改进",
+  priority:"中",
+  dueAt:new Date(Date.now() + 86_400_000).toISOString(),
+  reason:"本地任务持久化回归",
+  source:"数据洞察"
+});
+assert.equal(localTask.managementTask, true);
+assert.ok(store.state.managementTasks.some((item) => item.id === localTask.id), "本地任务必须进入可持久化集合");
+assert.ok(store.managementOverlay().managementTasks.some((item) => item.id === localTask.id), "管理覆盖层必须包含本地改进任务");
+store.completeTask(localTask.id);
+assert.equal(store.task(localTask.id).status, "已完成");
+assert.equal(store.state.managementTasks.find((item) => item.id === localTask.id).status, "已完成", "完成状态必须同步到持久化任务");
+const taskRoundTrip = applyManagementDomainOverlay(store.managementOverlay(), store.baseState);
+assert.equal(taskRoundTrip.tasks.find((item) => item.id === localTask.id)?.status, "已完成", "重新水合后本地任务和完成状态必须保留");
 
 const conversation = store.createConversationDraft({ customerId:customer.id, channel:"企业微信" });
 assert.ok(conversation?.id, "creating a conversation must return a persisted draft");
@@ -151,6 +168,15 @@ assert.equal(store.state.customers.some((item) => item.id === "C-acquisition-ope
 assert.equal(store.state.customers.some((item) => item.id === "C-acquisition-production-named-test"), true, "生产客户名称含测试字样时不得被隐藏");
 assert.equal(store.state.conversations.some((item) => item.id === "V-acquisition-production-named-test"), true, "生产客户名称含测试字样时关联会话必须可见");
 assert.equal(store.state.tasks.some((item) => item.id === "T-acquisition-production-named-test"), true, "生产客户名称含测试字样时关联任务必须可见");
+const acquiredCustomerManagementTask = store.addTask({
+  customerId:"C-acquisition-operational",
+  title:"关联获客客户的本地改进任务",
+  type:"经营改进",
+  priority:"中",
+  dueAt:new Date(Date.now() + 86_400_000).toISOString(),
+  reason:"验证获客全量同步不得删除本地管理任务",
+  source:"数据洞察"
+});
 
 store.upsertAcquisitionSnapshot({
   customers:[],
@@ -161,6 +187,7 @@ store.upsertAcquisitionSnapshot({
 assert.equal(store.state.customers.some((item) => item.id === "C-acquisition-operational"), false, "正式全量快照不含的获客客户不得残留在新实例中");
 assert.equal(store.state.conversations.some((item) => item.id === "V-acquisition-operational"), false, "正式全量快照不含的获客会话不得在刷新后继续显示");
 assert.equal(store.state.tasks.some((item) => item.id === "T-acquisition-operational"), false, "正式全量快照不含的获客任务不得在刷新后继续显示");
+assert.equal(store.task(acquiredCustomerManagementTask.id)?.status, "待处理", "关联获客客户的本地管理任务不得被全量同步误删");
 assert.equal(store.state.customers.some((item) => item.id === "C-test-local"), true, "非获客的本地运营数据不得被获客全量同步清除");
 
 const product = store.addProduct({ name:"测试产品", department:"皮肤美容科", category:"测试分类" });

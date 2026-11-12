@@ -7,7 +7,7 @@ import { createJsonStateStore } from "./platform/json-state-store.mjs";
 const SCHEMA = "huamei.management-domain-overlay.v1";
 const DYNAMIC_COLLECTIONS = Object.freeze([
   "managementUsers", "managementRoles", "customers", "tasks", "conversations",
-  "journeys", "agents", "connectors", "audit", "handovers", "configurationRecords"
+  "managementTasks", "journeys", "agents", "connectors", "audit", "handovers", "configurationRecords"
 ]);
 const OVERRIDE_COLLECTIONS = Object.freeze([
   "productOverrides", "physicianOverrides", "knowledgeOverrides"
@@ -18,6 +18,7 @@ const COLLECTION_LIMITS = Object.freeze({
   managementRoles:1_000,
   customers:100_000,
   tasks:200_000,
+  managementTasks:200_000,
   conversations:100_000,
   journeys:10_000,
   agents:1_000,
@@ -40,6 +41,7 @@ const emptyOverlay = () => ({
   managementRoles:[],
   customers:[],
   tasks:[],
+  managementTasks:[],
   conversations:[],
   journeys:[],
   agents:[],

@@ -28,6 +28,9 @@ assert.match(app, /sendManagementConversationReply\(externalConversationId, text
 assert.match(client, /tasks\/\$\{encodeURIComponent\(id\)\}\/complete/, "任务完成必须调用服务端任务完成接口");
 assert.match(app, /completeManagementTask\(taskId, \{ customerId:task\.customerId \}\)/, "任务完成必须绑定客户并在服务端持久化");
 assert.match(app, /store\.applyTaskCompletion\(result\.task\)/, "服务端确认后才能更新本地任务状态");
+assert.match(app, /task\.managementTask === true \|\| \/\^T-\/\.test\(task\.id\)/, "本地管理任务必须与获客任务分流");
+assert.match(app, /store\.completeTask\(taskId\);[\s\S]{0,120}flushManagementOverlay\(\)/, "本地管理任务完成后必须等待覆盖层持久化");
+assert.match(store, /managementTasks/, "本地管理任务必须有独立持久化集合");
 assert.match(router, /taskCompleteMatch[\s\S]{0,900}completeAcquisitionTask|tasks\.complete/, "BFF必须把任务完成透传到持久化存储");
 assert.match(app, /const isCurrentHandoverAssignee = \(handover\)/, "界面必须根据当前登录顾问识别实际领取人");
 assert.match(app, /only current?领取人可发送|仅当前领取人可发送|only.*assignee/i, "非领取人必须在界面侧收到明确的发送限制说明");
