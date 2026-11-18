@@ -4,8 +4,8 @@ export const createAcquisitionServiceOpenApi = (origin = "http://127.0.0.1:4180"
   openapi:"3.1.0",
   info:{
     title:"华美售前智能体独立服务 API",
-    version:"1.5.0",
-    description:"租户隔离、渠道无关的售前服务。调用方由X-Caller-Id + X-Service-Key鉴权，租户与权限来自服务端注册表；请求中tenant_id仅做一致性校验。"
+    version:"1.6.0",
+    description:"租户隔离、渠道无关的售前服务。内部调用方由X-Caller-Id + X-Service-Key鉴权；企业微信回调使用官方SHA-1签名与AES-256-CBC验签解密，抖音通过带HMAC-SHA256签名的授权连接器接入。外部回调租户由服务端配置固定，不接受消息正文切换租户。"
   },
   servers:[{ url:origin }],
   tags:[
@@ -29,6 +29,49 @@ export const createAcquisitionServiceOpenApi = (origin = "http://127.0.0.1:4180"
         parameters:[{ name:"channel", in:"path", required:true, schema:{ type:"string", enum:ACQUISITION_CHANNELS.map((item) => item.id) } }, { $ref:"#/components/parameters/IdempotencyKey" }],
         requestBody:{ required:true, content:{ "application/json":{ schema:{ type:"object" } } } },
         responses:{ "200":{ description:"渠道格式的回复" }, "400":{ description:"消息或渠道无效" }, "401":{ description:"服务鉴权失败" }, "403":{ description:"调用方无权访问该租户或缺少操作权限" }, "409":{ description:"幂等键对应的请求内容不一致" }, "429":{ description:"超过调用频率" } }
+      }
+    },
+    "/v1/channels/wecom/webhook":{
+      get:{
+        tags:["Channels"], summary:"企业微信回调URL验证", security:[],
+        description:"接收msg_signature、timestamp、nonce和echostr。服务验证SHA-1签名、AES解密echostr并核对receive_id后原样返回。该端点供企业微信平台调用，不使用X-Service-Key。",
+        parameters:[
+          { name:"msg_signature", in:"query", required:true, schema:{ type:"string" } },
+          { name:"timestamp", in:"query", required:true, schema:{ type:"string" } },
+          { name:"nonce", in:"query", required:true, schema:{ type:"string" } },
+          { name:"echostr", in:"query", required:true, schema:{ type:"string" } }
+        ],
+        responses:{ "200":{ description:"解密后的验证字符串", content:{ "text/plain":{ schema:{ type:"string" } } } }, "401":{ description:"签名无效" }, "403":{ description:"企业ID不匹配" }, "503":{ description:"渠道尚未配置" } }
+      },
+      post:{
+        tags:["Channels"], summary:"接收企业微信加密消息并生成回复", security:[],
+        description:"只处理文本消息。默认通过加密被动XML回复；HUAMEI_CHANNEL_WECOM_REPLY_MODE=active时调用企业微信应用消息接口。人工接管状态下不再发送AI文本。",
+        parameters:[
+          { name:"msg_signature", in:"query", required:true, schema:{ type:"string" } },
+          { name:"timestamp", in:"query", required:true, schema:{ type:"string" } },
+          { name:"nonce", in:"query", required:true, schema:{ type:"string" } }
+        ],
+        requestBody:{ required:true, content:{ "application/xml":{ schema:{ type:"string" } } } },
+        responses:{ "200":{ description:"加密XML回复或success确认" }, "401":{ description:"签名无效" }, "503":{ description:"渠道或智能体依赖尚未就绪" } }
+      }
+    },
+    "/v1/channels/douyin/webhook":{
+      get:{
+        tags:["Channels"], summary:"抖音回调挑战校验", security:[],
+        description:"支持token/verify_token查询参数校验，或同时提供HMAC签名请求头。验证通过后原样返回challenge。",
+        parameters:[{ name:"challenge", in:"query", required:true, schema:{ type:"string", maxLength:512 } }, { name:"token", in:"query", schema:{ type:"string" } }],
+        responses:{ "200":{ description:"验证字符串", content:{ "text/plain":{ schema:{ type:"string" } } } }, "401":{ description:"验证令牌或签名无效" } }
+      },
+      post:{
+        tags:["Channels"], summary:"接收抖音授权连接器上报的消息", security:[],
+        description:"连接器必须提供X-Huamei-Timestamp、X-Huamei-Nonce和X-Huamei-Signature。签名为HMAC-SHA256(secret, timestamp + LF + nonce + LF + rawBody)。智能体回复以相同幂等键POST到HUAMEI_CHANNEL_DOUYIN_REPLY_WEBHOOK_URL。",
+        parameters:[
+          { name:"X-Huamei-Timestamp", in:"header", required:true, schema:{ type:"string" } },
+          { name:"X-Huamei-Nonce", in:"header", required:true, schema:{ type:"string" } },
+          { name:"X-Huamei-Signature", in:"header", required:true, schema:{ type:"string" } }
+        ],
+        requestBody:{ required:true, content:{ "application/json":{ schema:{ type:"object" } } } },
+        responses:{ "202":{ description:"已进入智能体处理并提交给回复连接器" }, "200":{ description:"非文本事件已忽略" }, "401":{ description:"签名或时间戳无效" }, "503":{ description:"渠道或连接器尚未就绪" } }
       }
     },
     "/v1/conversations/reply":{

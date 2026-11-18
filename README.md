@@ -21,6 +21,8 @@ npm run dev
 
 team:init生成本机独立测试密码，不复制负责人账号。默认不访问模型及院方接口；自行获得开发配置后再启用对应能力。知识包是924条公开记录的开发子集；需要完整原始知识/真实数据库的专项测试另行提供环境。首轮不要把未启用的LangGraph/GraphRAG描述为已上线引擎。
 
+企业微信自建应用与抖音授权连接器的回调、配置和联调步骤见[外部渠道接入说明](docs/onboarding/09_企业微信与抖音渠道接入.md)。
+
 ## 交付
 
 提交代码和report后运行 `npm run team:deliver -- --role A --id dialogue-001 --report handoff/report-A-dialogue-001.json`。交回输出目录的全部文件。负责人使用 `team:inspect` 检查，不会自动合并或执行提交代码。

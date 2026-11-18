@@ -84,15 +84,32 @@ const fullyConfiguredWecom = {
   HUAMEI_CHANNEL_WECOM_AGENT_ID:"agent",
   HUAMEI_CHANNEL_WECOM_SECRET:"secret",
   HUAMEI_CHANNEL_WECOM_TOKEN:"token",
-  HUAMEI_CHANNEL_WECOM_ENCODING_AES_KEY:"aes"
+  HUAMEI_CHANNEL_WECOM_ENCODING_AES_KEY:"aes",
+  HUAMEI_CHANNEL_WECOM_TENANT_ID:"tenant-channel"
 };
 const configuredWecom = getAcquisitionChannelStatus("wecom", { env:fullyConfiguredWecom });
-assert.equal(configuredWecom.status, "configured");
+assert.equal(configuredWecom.status, "ready");
 assert.equal(configuredWecom.configuration_ready, true);
-assert.equal(configuredWecom.enabled, false, "仅配置凭据不能伪装为可投递适配器");
+assert.equal(configuredWecom.enabled, true);
+assert.equal(configuredWecom.connector_implemented, true);
 const configuredWecomOutbound = formatChannelOutbound("wecom", agentResult, { env:fullyConfiguredWecom });
 assert.equal(configuredWecomOutbound.msgtype, "text");
-assert.equal(configuredWecomOutbound.delivery.status, "adapter_not_implemented");
+assert.equal(configuredWecomOutbound.delivery.status, "transport_ready");
+assert.equal(configuredWecomOutbound.delivery.delivery_enabled, true);
 assert.equal(configuredWecomOutbound.delivery.delivered, false);
+
+const fullyConfiguredDouyin = {
+  HUAMEI_CHANNEL_DOUYIN_APP_ID:"app",
+  HUAMEI_CHANNEL_DOUYIN_APP_SECRET:"secret",
+  HUAMEI_CHANNEL_DOUYIN_WEBHOOK_SECRET:"webhook-secret",
+  HUAMEI_CHANNEL_DOUYIN_VERIFY_TOKEN:"verify-token",
+  HUAMEI_CHANNEL_DOUYIN_REPLY_WEBHOOK_URL:"https://connector.example.test/douyin/reply",
+  HUAMEI_CHANNEL_DOUYIN_REPLY_TOKEN:"reply-token",
+  HUAMEI_CHANNEL_DOUYIN_TENANT_ID:"tenant-channel"
+};
+const configuredDouyin = getAcquisitionChannelStatus("douyin", { env:fullyConfiguredDouyin });
+assert.equal(configuredDouyin.status, "ready");
+assert.equal(configuredDouyin.enabled, true);
+assert.equal(configuredDouyin.connector_implemented, true);
 
 console.log("✓ 统一 IM 渠道状态、标准化入站和未配置投递保护通过");

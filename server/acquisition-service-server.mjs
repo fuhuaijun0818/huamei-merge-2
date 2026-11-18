@@ -13,6 +13,10 @@ try {
 }
 
 const { ACQUISITION_CHANNELS, formatChannelOutbound, normalizeChannelInbound } = await import("./acquisition-channel-adapters.mjs");
+const {
+  handleDouyinWebhook,
+  handleWecomWebhook
+} = await import("./acquisition-channel-connectors.mjs");
 const { getAcquisitionDomainStatus, processAcquisitionEnvelope, acquisitionHandoverDeliveryOverride } = await import("./acquisition-domain-service.mjs");
 const { getHuameiKnowledgeStatus } = await import("./huamei-knowledge.mjs");
 const { flushAcquisitionSessions } = await import("./acquisition-session.mjs");
@@ -197,6 +201,7 @@ const routeTemplateForRequest = (request) => {
   catch { return "__unmatched__"; }
   const templates = [
     [/^\/v1\/channels\/[^/]+\/inbound$/, "/v1/channels/:channel/inbound"],
+    [/^\/v1\/channels\/(?:wecom|douyin)\/webhook$/, "/v1/channels/:channel/webhook"],
     [/^\/v1\/conversations\/feedback$/, "/v1/conversations/feedback"],
     [/^\/v1\/feedback\/bad-cases$/, "/v1/feedback/bad-cases"],
     [/^\/v1\/feedback\/bad-cases\/[^/]+\/review$/, "/v1/feedback/bad-cases/:id/review"],
@@ -230,7 +235,7 @@ const sendJson = (response, requestId, status, payload, extra = {}) => {
 const sendError = (response, requestId, status, code, message, details = [], extra = {}) => sendJson(response, requestId, status, {
   error:{ code, message, ...(details.length ? { details } : {}) }, request_id:requestId
 }, extra);
-const readJsonBody = async (request) => {
+const readRawBody = async (request) => {
   let size = 0;
   const chunks = [];
   for await (const chunk of request) {
@@ -242,8 +247,12 @@ const readJsonBody = async (request) => {
     }
     chunks.push(chunk);
   }
-  if (!chunks.length) return {};
-  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  return Buffer.concat(chunks).toString("utf8");
+};
+const readJsonBody = async (request) => {
+  const raw = await readRawBody(request);
+  if (!raw) return {};
+  try { return JSON.parse(raw); }
   catch {
     const error = new Error("请求体不是有效JSON");
     error.code = "INVALID_JSON";
@@ -378,6 +387,29 @@ export function createAcquisitionServiceServer(options = {}) {
   if (!isLoopbackAddress(host) && !acquisitionClientConfig.valid && SERVICE_KEY.length < 24) {
     throw new Error("售前智能体服务对非本机地址监听时，必须配置HUAMEI_ACQUISITION_CLIENTS_JSON调用方白名单");
   }
+  const channelWebhookProcessEnvelope = options.channelWebhookProcessEnvelope || (async (envelope, metadata = {}) => {
+    if (productionRuntime) {
+      await ensureKnowledgeReleasePolicyFresh(envelope.tenant_id);
+      const domain = await getAcquisitionDomainStatus(envelope.tenant_id);
+      const externalDependencies = domain.status === "ok"
+        ? await probeProductionExternalDependencies({ domain })
+        : { ok:false, status:"not_ready" };
+      if (!evaluateAcquisitionDataPlaneReadiness({ production:true, domain, externalDependencies }).ok) {
+        const error = new Error("售前智能体数据面尚未就绪");
+        error.code = "ACQUISITION_DATA_PLANE_NOT_READY";
+        error.status = 503;
+        throw error;
+      }
+    }
+    const result = await processAcquisitionEnvelope(envelope, {
+      requestId:metadata.requestId,
+      caller:metadata.caller
+    });
+    return await acquisitionHandoverDeliveryOverride(envelope, result, {
+      requestId:metadata.requestId
+    }) || result;
+  });
+  const channelFetch = options.channelFetch || fetch;
   const applicationHandler = (request, response) => {
     const requestId = requestIdFor(request);
     let observabilityPath = "";
@@ -408,6 +440,68 @@ export function createAcquisitionServiceServer(options = {}) {
     }
     if (request.method === "GET" && url.pathname === "/openapi.json") {
       sendJson(response, requestId, 200, createAcquisitionServiceOpenApi(`${url.protocol}//${url.host}`));
+      return;
+    }
+    const channelWebhookMatch = url.pathname.match(/^\/v1\/channels\/(wecom|douyin)\/webhook$/);
+    if (channelWebhookMatch) {
+      if (!["GET", "POST"].includes(request.method)) {
+        sendError(response, requestId, 405, "METHOD_NOT_ALLOWED", "渠道回调仅支持GET和POST");
+        return;
+      }
+      let webhookRate;
+      try {
+        webhookRate = await rateLimitStore.consume(
+          scopedKey("channel-webhook", channelWebhookMatch[1], request.socket.remoteAddress || "unknown"),
+          { limit:RATE_LIMIT, windowMs:60_000 }
+        );
+      } catch {
+        sendError(response, requestId, 503, "RATE_LIMIT_STORE_UNAVAILABLE", "渠道回调防护服务暂时不可用");
+        return;
+      }
+      if (!webhookRate.allowed) {
+        sendJson(response, requestId, 429, {
+          error:{ code:"RATE_LIMITED", message:"渠道回调请求较多，请稍后再试" },
+          request_id:requestId
+        }, {
+          "Retry-After":"60",
+          "X-RateLimit-Limit":String(RATE_LIMIT),
+          "X-RateLimit-Remaining":String(webhookRate.remaining),
+          "X-RateLimit-Reset":webhookRate.resetAt
+        });
+        return;
+      }
+      try {
+        const rawBody = request.method === "POST" ? await readRawBody(request) : "";
+        const handler = channelWebhookMatch[1] === "wecom" ? handleWecomWebhook : handleDouyinWebhook;
+        const result = await handler({
+          method:request.method,
+          url,
+          headers:request.headers,
+          rawBody,
+          env:process.env,
+          requestId,
+          processEnvelope:channelWebhookProcessEnvelope,
+          fetchImpl:channelFetch
+        });
+        response.writeHead(result.status, {
+          "Content-Type":result.contentType || "application/json; charset=utf-8",
+          "Cache-Control":"no-store",
+          "X-Content-Type-Options":"nosniff",
+          "X-Request-Id":requestId
+        });
+        response.end(typeof result.body === "string" ? result.body : JSON.stringify(result.body));
+      } catch (error) {
+        const status = error.status || (error.code === "BODY_TOO_LARGE" ? 413 : 500);
+        const validation = status < 500;
+        sendError(
+          response,
+          requestId,
+          status,
+          error.code || "CHANNEL_WEBHOOK_ERROR",
+          validation ? error.message : "渠道连接器暂时不可用",
+          validation ? error.details || [] : []
+        );
+      }
       return;
     }
     const principal = authenticatedCaller(request, host);

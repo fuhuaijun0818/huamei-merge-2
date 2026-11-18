@@ -81,6 +81,8 @@ try {
   const serviceSpecification = await serviceOpenApi.json();
   assert.equal(serviceSpecification.openapi, "3.1.0");
   assert.ok(serviceSpecification.paths["/v1/channels/{channel}/inbound"]);
+  assert.ok(serviceSpecification.paths["/v1/channels/wecom/webhook"]);
+  assert.ok(serviceSpecification.paths["/v1/channels/douyin/webhook"]);
   assert.ok(serviceSpecification.paths["/v1/conversations/reply"]);
   assert.ok(serviceSpecification.paths["/v1/conversations/feedback"]);
   assert.ok(serviceSpecification.paths["/v1/feedback/bad-cases"]);
@@ -98,6 +100,12 @@ try {
   for (const channelId of ["wecom", "douyin", "xiaohongshu"]) {
     assert.equal(channelList.find((item) => item.id === channelId)?.status, "not_configured");
   }
+  const unconfiguredWecomWebhook = await fetch(`${baseUrl}/v1/channels/wecom/webhook`);
+  assert.equal(unconfiguredWecomWebhook.status, 503);
+  assert.equal((await unconfiguredWecomWebhook.json()).error.code, "CHANNEL_NOT_CONFIGURED");
+  const unconfiguredDouyinWebhook = await fetch(`${baseUrl}/v1/channels/douyin/webhook`);
+  assert.equal(unconfiguredDouyinWebhook.status, 503);
+  assert.equal((await unconfiguredDouyinWebhook.json()).error.code, "CHANNEL_NOT_CONFIGURED");
 
   const feedbackCreate = await fetch(`${baseUrl}/v1/conversations/feedback`, {
     method:"POST",

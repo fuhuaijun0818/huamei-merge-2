@@ -51,6 +51,7 @@
     "test:security:p0": "node tests/production-readiness-p0.mjs",
     "test:security:redteam": "node tests/security-redteam.mjs",
     "test:service-auth": "node tests/acquisition-service-auth.mjs",
+    "test:channel-connectors": "node tests/acquisition-channel-adapters.mjs && node tests/acquisition-channel-connectors.mjs && node tests/acquisition-channel-webhook-http.mjs",
     "test:management-auth": "node tests/phase-one-role-policy.mjs && node tests/phase-one-api-boundary.mjs && node tests/management-authorization.mjs && node tests/admin-bff-contract.mjs && node tests/handover-atomic-completion.mjs && node tests/management-handover-ui.mjs && node tests/management-production-mode.mjs && node tests/management-domain-store.mjs && node tests/management-browser-storage.mjs && node tests/management-xss-boundary.mjs && node tests/management-local-actions.mjs",
     "test:phase-one-boundary": "node tests/phase-one-role-policy.mjs && node tests/phase-one-api-boundary.mjs",
     "test:admin-bff": "node tests/admin-bff-contract.mjs",

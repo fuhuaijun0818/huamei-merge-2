@@ -17,25 +17,36 @@ const CHANNEL_DEFINITIONS = Object.freeze([
   {
     id:"wecom",
     name:"企业微信",
-    transport:"官方 IM adapter",
+    transport:"企业微信自建应用加密回调",
     external:true,
+    implemented:true,
+    inbound_transport:"encrypted_callback",
+    outbound_transport:"passive_xml_or_app_message",
     required_env:[
       "HUAMEI_CHANNEL_WECOM_CORP_ID",
       "HUAMEI_CHANNEL_WECOM_AGENT_ID",
       "HUAMEI_CHANNEL_WECOM_SECRET",
       "HUAMEI_CHANNEL_WECOM_TOKEN",
-      "HUAMEI_CHANNEL_WECOM_ENCODING_AES_KEY"
+      "HUAMEI_CHANNEL_WECOM_ENCODING_AES_KEY",
+      "HUAMEI_CHANNEL_WECOM_TENANT_ID"
     ]
   },
   {
     id:"douyin",
     name:"抖音私信",
-    transport:"官方 IM adapter",
+    transport:"抖音签名回调与授权连接器中转",
     external:true,
+    implemented:true,
+    inbound_transport:"signed_hmac_callback",
+    outbound_transport:"signed_connector_relay",
     required_env:[
       "HUAMEI_CHANNEL_DOUYIN_APP_ID",
       "HUAMEI_CHANNEL_DOUYIN_APP_SECRET",
-      "HUAMEI_CHANNEL_DOUYIN_WEBHOOK_SECRET"
+      "HUAMEI_CHANNEL_DOUYIN_WEBHOOK_SECRET",
+      "HUAMEI_CHANNEL_DOUYIN_VERIFY_TOKEN",
+      "HUAMEI_CHANNEL_DOUYIN_REPLY_WEBHOOK_URL",
+      "HUAMEI_CHANNEL_DOUYIN_REPLY_TOKEN",
+      "HUAMEI_CHANNEL_DOUYIN_TENANT_ID"
     ]
   },
   {
@@ -43,6 +54,9 @@ const CHANNEL_DEFINITIONS = Object.freeze([
     name:"小红书私信",
     transport:"官方 IM adapter",
     external:true,
+    implemented:false,
+    inbound_transport:"normalization_only",
+    outbound_transport:"not_implemented",
     required_env:[
       "HUAMEI_CHANNEL_XIAOHONGSHU_APP_ID",
       "HUAMEI_CHANNEL_XIAOHONGSHU_APP_SECRET",
@@ -126,6 +140,7 @@ const configurationFor = (definition, env = process.env) => {
   const missing = definition.required_env.filter((key) => !String(env?.[key] || "").trim());
   const configured = missing.length === 0;
   const partial = !configured && missing.length < definition.required_env.length;
+  const enabled = configured && definition.implemented === true;
   return {
     id:definition.id,
     name:definition.name,
@@ -133,15 +148,22 @@ const configurationFor = (definition, env = process.env) => {
     // `configured` only means the minimum secret material is present. It does
     // not mean official webhook verification or outbound delivery has been
     // implemented, so no state below can be interpreted as delivery success.
-    status:configured ? "configured" : partial ? "misconfigured" : "not_configured",
+    status:enabled ? "ready" : configured ? "configured" : partial ? "misconfigured" : "not_configured",
     // Credential presence alone must not make a channel deliverable. The
     // official verifier/transport implementation is the only thing allowed to
     // switch an external connector into an enabled delivery state.
-    enabled:false,
+    enabled,
     configuration_ready:configured,
     external:true,
-    inbound:{ normalization:"ready", official_webhook_verification:"not_implemented" },
-    outbound:{ formatting:"ready", delivery:"not_implemented" },
+    connector_implemented:definition.implemented === true,
+    inbound:{
+      normalization:"ready",
+      official_webhook_verification:definition.implemented === true ? definition.inbound_transport : "not_implemented"
+    },
+    outbound:{
+      formatting:"ready",
+      delivery:definition.implemented === true ? definition.outbound_transport : "not_implemented"
+    },
     required_configuration:[...definition.required_env],
     missing_configuration:missing
   };
@@ -177,7 +199,7 @@ export function getChannelOutboundDeliveryState(channelValue, { env = process.en
       reason:configuration.id === "web" ? "HTTP_RESPONSE_IS_NOT_EXTERNAL_DELIVERY" : "GENERIC_API_CALLER_OWNS_DELIVERY"
     };
   }
-  if (configuration.status !== "configured") {
+  if (!configuration.configuration_ready) {
     return {
       channel:configuration.id,
       status:"not_configured",
@@ -186,6 +208,16 @@ export function getChannelOutboundDeliveryState(channelValue, { env = process.en
       external_message_id:null,
       reason:"OFFICIAL_CREDENTIALS_NOT_CONFIGURED",
       missing_configuration:configuration.missing_configuration
+    };
+  }
+  if (configuration.enabled) {
+    return {
+      channel:configuration.id,
+      status:"transport_ready",
+      delivery_enabled:true,
+      delivered:false,
+      external_message_id:null,
+      reason:"OUTBOUND_CONNECTOR_REQUIRES_PLATFORM_CALL"
     };
   }
   return {
